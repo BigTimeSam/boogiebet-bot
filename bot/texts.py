@@ -194,8 +194,8 @@ ADMIN_NO_LOCKED_BETS = "Ei lukittuja kohteita ratkaistaksi."
 
 ADMIN_RESET_CONFIRM = (
     "⚠️ Haluatko varmasti nollata pelin?\n\n"
-    "Tämä poistaa kaikki vetokohteet ja vedot sekä palauttaa kaikkien saldot 1 000 €:oon. "
-    "Adminit säilyvät. Toimintoa ei voi peruuttaa."
+    "Tämä poistaa kaikki käyttäjät, vetokohteet ja vedot — myös adminit. "
+    "Toimintoa ei voi peruuttaa."
 )
 
-ADMIN_RESET_DONE = "✅ Peli nollattu! Kaikki vedot poistettu ja saldot palautettu 1 000 €:oon."
+ADMIN_RESET_DONE = "✅ Peli nollattu! Kaikki käyttäjät, vetokohteet ja vedot poistettu."

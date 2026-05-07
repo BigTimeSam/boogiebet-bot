@@ -318,6 +318,7 @@ async def reset_game():
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("DELETE FROM wagers")
+            await conn.execute("DELETE FROM bet_options")
             await conn.execute("DELETE FROM bets")
-            await conn.execute("UPDATE users SET balance = 1000.00")
+            await conn.execute("DELETE FROM users")
             await conn.execute("UPDATE settings SET value = 'false' WHERE key = 'game_finished'")
