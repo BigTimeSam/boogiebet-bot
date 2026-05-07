@@ -753,7 +753,7 @@ async def _build_winners():
             winners.sort(key=lambda x: x[0].lower())
             parts = [f"{name} (+{profit:,.0f} €)".replace(",", " ") for name, profit in winners]
             msg += "🏆 " + ", ".join(parts) + "\n"
-        else:
+        elif not losers:
             msg += texts.WINNERS_NO_PLAYERS
 
         if losers:
