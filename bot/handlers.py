@@ -646,7 +646,7 @@ async def _build_kohteet(user):
                     )
                 if not game_done:
                     side_fi = "kyllä" if w and w["side"] == "yes" else "ei" if w else None
-                    title_text = f"#{b['id']} {b['title']}"
+                    title_text = f"⚖️ #{b['id']} {b['title']}"
                     keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
                     keyboard.append([
                         InlineKeyboardButton(f"✅ Kyllä {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
