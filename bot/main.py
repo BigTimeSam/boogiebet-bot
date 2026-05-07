@@ -38,7 +38,9 @@ def main():
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(admin.admin_callback, pattern=r"^adm:"))
     app.add_handler(CallbackQueryHandler(handlers.nav_callback, pattern=r"^nav:"))
+    app.add_handler(CallbackQueryHandler(handlers.bet_type_callback, pattern=r"^bet_type:"))
     app.add_handler(CallbackQueryHandler(handlers.bet_side_callback, pattern=r"^bet:"))
+    app.add_handler(CallbackQueryHandler(handlers.winner_opt_callback, pattern=r"^opt:"))
     app.add_handler(CallbackQueryHandler(handlers.delete_bet_callback, pattern=r"^del:"))
     app.add_handler(CallbackQueryHandler(handlers.cancel_wager_callback, pattern=r"^wager:cancel:"))
 

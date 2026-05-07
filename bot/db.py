@@ -4,10 +4,39 @@ import os
 _pool = None
 
 
+async def _migrate(pool):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "ALTER TABLE bets ADD COLUMN IF NOT EXISTS bet_type VARCHAR(10) NOT NULL DEFAULT 'simple'"
+        )
+        await conn.execute(
+            "ALTER TABLE bets ALTER COLUMN yes_odds SET DEFAULT 0"
+        )
+        await conn.execute(
+            "ALTER TABLE bets ALTER COLUMN no_odds SET DEFAULT 0"
+        )
+        await conn.execute(
+            "ALTER TABLE bets ALTER COLUMN result TYPE TEXT"
+        )
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bet_options (
+                id       SERIAL PRIMARY KEY,
+                bet_id   INTEGER REFERENCES bets(id) ON DELETE CASCADE,
+                label    TEXT NOT NULL,
+                odds     NUMERIC(5,2) NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await conn.execute(
+            "ALTER TABLE wagers ADD COLUMN IF NOT EXISTS option_id INTEGER REFERENCES bet_options(id)"
+        )
+
+
 async def get_pool():
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(os.environ["DATABASE_URL"])
+        await _migrate(_pool)
     return _pool
 
 
@@ -35,7 +64,6 @@ async def set_admin(telegram_id: int):
 
 
 async def get_active_bets():
-    """Return open and locked bets (everything visible to users)."""
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT b.*, u.username AS creator_name "
@@ -57,17 +85,47 @@ async def get_bet(bet_id: int):
     return dict(row) if row else None
 
 
+async def get_bet_options(bet_id: int):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM bet_options WHERE bet_id = $1 ORDER BY position, id", bet_id
+    )
+    return [dict(r) for r in rows]
+
+
 async def create_bet(title: str, yes_odds: float, no_odds: float, created_by: int):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO bets (title, yes_odds, no_odds, created_by) VALUES ($1, $2, $3, $4) RETURNING *",
+        "INSERT INTO bets (title, yes_odds, no_odds, bet_type, created_by) "
+        "VALUES ($1, $2, $3, 'simple', $4) RETURNING *",
         title, yes_odds, no_odds, created_by,
     )
     return dict(row)
 
 
+async def create_winner_bet(title: str, options: list, created_by: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            bet = await conn.fetchrow(
+                "INSERT INTO bets (title, yes_odds, no_odds, bet_type, created_by) "
+                "VALUES ($1, 0, 0, 'winner', $2) RETURNING *",
+                title, created_by,
+            )
+            opt_rows = []
+            for i, opt in enumerate(options):
+                row = await conn.fetchrow(
+                    "INSERT INTO bet_options (bet_id, label, odds, position) "
+                    "VALUES ($1, $2, $3, $4) RETURNING *",
+                    bet["id"], opt["label"], opt["odds"], i,
+                )
+                opt_rows.append(dict(row))
+            result = dict(bet)
+            result["options"] = opt_rows
+            return result
+
+
 async def delete_bet(bet_id: int):
-    """Delete an open bet and refund all wagers on it."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -129,6 +187,38 @@ async def resolve_bet(bet_id: int, result: str):
             return winners
 
 
+async def resolve_winner_bet(bet_id: int, winning_option_id: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2",
+                str(winning_option_id), bet_id,
+            )
+            wagers = await conn.fetch(
+                "SELECT w.*, u.telegram_id, u.username, bo.odds "
+                "FROM wagers w "
+                "JOIN users u ON u.id = w.user_id "
+                "JOIN bet_options bo ON bo.id = w.option_id "
+                "WHERE w.bet_id = $1",
+                bet_id,
+            )
+            winners = []
+            for w in wagers:
+                if w["option_id"] == winning_option_id:
+                    payout = float(w["amount"]) * float(w["odds"])
+                    new_balance = await conn.fetchval(
+                        "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
+                        payout, w["user_id"],
+                    )
+                    winners.append({
+                        "username": w["username"] or f"user{w['telegram_id']}",
+                        "profit": payout,
+                        "balance": float(new_balance),
+                    })
+            return winners
+
+
 async def get_user_wager(user_id: int, bet_id: int):
     pool = await get_pool()
     row = await pool.fetchrow(
@@ -137,7 +227,7 @@ async def get_user_wager(user_id: int, bet_id: int):
     return dict(row) if row else None
 
 
-async def place_wager(user_id: int, bet_id: int, side: str, amount: float):
+async def place_wager(user_id: int, bet_id: int, side: str, amount: float, option_id: int = None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -151,19 +241,21 @@ async def place_wager(user_id: int, bet_id: int, side: str, amount: float):
             )
             if existing:
                 await conn.execute(
-                    "UPDATE wagers SET side = $1, amount = $2 WHERE user_id = $3 AND bet_id = $4",
-                    side, amount, user_id, bet_id,
+                    "UPDATE wagers SET side = $1, amount = $2, option_id = $3 "
+                    "WHERE user_id = $4 AND bet_id = $5",
+                    side, amount, option_id, user_id, bet_id,
                 )
             else:
                 await conn.execute(
-                    "INSERT INTO wagers (user_id, bet_id, side, amount) VALUES ($1, $2, $3, $4)",
-                    user_id, bet_id, side, amount,
+                    "INSERT INTO wagers (user_id, bet_id, side, amount, option_id) "
+                    "VALUES ($1, $2, $3, $4, $5)",
+                    user_id, bet_id, side, amount, option_id,
                 )
             return float(balance), existing is not None
 
 
 async def cancel_wager(user_id: int, bet_id: int):
-    """Cancel an open wager and refund the amount. Returns refunded amount or None if not cancellable."""
+    """Cancel an open wager and refund 95% of the amount."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -190,8 +282,10 @@ async def cancel_wager(user_id: int, bet_id: int):
 async def get_user_wagers_with_bets(user_id: int):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT w.*, b.title, b.yes_odds, b.no_odds, b.status, b.result "
+        "SELECT w.*, b.title, b.yes_odds, b.no_odds, b.status, b.result, b.bet_type, "
+        "bo.label AS option_label, bo.odds AS option_odds "
         "FROM wagers w JOIN bets b ON b.id = w.bet_id "
+        "LEFT JOIN bet_options bo ON bo.id = w.option_id "
         "WHERE w.user_id = $1 ORDER BY w.bet_id",
         user_id,
     )
@@ -218,7 +312,6 @@ async def set_game_finished():
 
 
 async def reset_game():
-    """Delete all bets and wagers, reset balances to 1000, clear game_finished. Admins are preserved."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():

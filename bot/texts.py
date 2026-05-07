@@ -122,6 +122,33 @@ NOT_ADMIN = "❌ Tämä komento on vain admineille."
 
 CANCEL_CREATION = "Luonti peruttu."
 
+ASK_BET_TYPE = (
+    "Uusi vetokohde\n\n"
+    "Nimi: {title}\n\n"
+    "Valitse vetotyyppi:"
+)
+
+ASK_WINNER_OPTIONS = (
+    "Voittajaveto — vaihe 2/2\n\n"
+    "Kohde: {title}\n\n"
+    "Syötä vaihtoehdot, yksi per rivi muodossa:\n"
+    "Nimi @ kerroin\n\n"
+    "esim.\n"
+    "Suomi @ 3.50\n"
+    "Ruotsi @ 2.00\n"
+    "Saksa @ 4.50"
+)
+
+INVALID_WINNER_OPTIONS = (
+    "❌ Tarkista muoto. Vähintään 2 vaihtoehtoa, yksi per rivi:\n"
+    "Nimi @ kerroin  (kerroin > 1.0)\n\n"
+    "esim.\n"
+    "Suomi @ 3.50\n"
+    "Ruotsi @ 2.00"
+)
+
+WINNER_BET_CREATED = "✅ Voittajaveto luotu!\n\n#{id}: {title}\n\n{options}"
+
 HELP_TEXT = (
     "📖 boogieBet — komennot\n\n"
     "/start — rekisteröidy ja avaa päävalikko\n"

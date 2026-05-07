@@ -212,21 +212,36 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not bet:
             await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
             return
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Kyllä", callback_data=f"adm:resolve:{bet_id}:yes"),
-                InlineKeyboardButton("❌ Ei", callback_data=f"adm:resolve:{bet_id}:no"),
-            ],
-            [InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:resolve_list")],
-        ])
-        await query.message.edit_text(
-            texts.ADMIN_RESOLVE_SIDE.format(id=bet_id, title=bet["title"]),
-            reply_markup=keyboard,
-        )
+        if bet["bet_type"] == "winner":
+            options = await db.get_bet_options(bet_id)
+            rows = [
+                [InlineKeyboardButton(
+                    f"{o['label']} @ {float(o['odds']):.2f}",
+                    callback_data=f"adm:resolve:{bet_id}:{o['id']}",
+                )]
+                for o in options
+            ]
+            rows.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:resolve_list")])
+            await query.message.edit_text(
+                texts.ADMIN_RESOLVE_SIDE.format(id=bet_id, title=bet["title"]),
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+        else:
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ Kyllä", callback_data=f"adm:resolve:{bet_id}:yes"),
+                    InlineKeyboardButton("❌ Ei", callback_data=f"adm:resolve:{bet_id}:no"),
+                ],
+                [InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:resolve_list")],
+            ])
+            await query.message.edit_text(
+                texts.ADMIN_RESOLVE_SIDE.format(id=bet_id, title=bet["title"]),
+                reply_markup=keyboard,
+            )
 
     elif action == "resolve" and len(parts) == 4:
         bet_id = int(parts[2])
-        result = parts[3]
+        value = parts[3]
         bet = await db.get_bet(bet_id)
         if not bet:
             await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
@@ -237,8 +252,15 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if bet["status"] == "open":
             await query.answer("Lukitse kohde ensin.", show_alert=True)
             return
-        winners = await db.resolve_bet(bet_id, result)
-        result_fi = "Kyllä ✅" if result == "yes" else "Ei ❌"
+        if bet["bet_type"] == "winner":
+            winning_option_id = int(value)
+            winners = await db.resolve_winner_bet(bet_id, winning_option_id)
+            options = await db.get_bet_options(bet_id)
+            winning = next((o for o in options if o["id"] == winning_option_id), None)
+            result_fi = f"🏆 {winning['label']}" if winning else f"Option {winning_option_id}"
+        else:
+            winners = await db.resolve_bet(bet_id, value)
+            result_fi = "Kyllä ✅" if value == "yes" else "Ei ❌"
         winners_text = "".join(
             texts.WINNER_ROW.format(username=w["username"], profit=w["profit"], balance=w["balance"])
             for w in winners

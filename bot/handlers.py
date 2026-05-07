@@ -6,7 +6,9 @@ import texts
 # user_data state keys
 AWAITING_AMOUNT = "awaiting_amount"
 AWAITING_BET_TITLE = "awaiting_bet_title"
+AWAITING_BET_TYPE = "awaiting_bet_type"
 AWAITING_BET_ODDS = "awaiting_bet_odds"
+AWAITING_WINNER_OPTIONS = "awaiting_winner_options"
 
 
 def main_menu_keyboard(is_admin=False):
@@ -27,6 +29,13 @@ def main_menu_keyboard(is_admin=False):
 
 def back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")]])
+
+
+def _bet_type_keyboard():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Kyllä / Ei", callback_data="bet_type:simple"),
+        InlineKeyboardButton("🏆 Voittajaveto", callback_data="bet_type:winner"),
+    ]])
 
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -238,6 +247,32 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    pending = ctx.user_data.pop(AWAITING_BET_TYPE, {})
+    title = pending.get("title", "")
+    ctx.user_data.pop("state", None)
+
+    bet_type = query.data.split(":")[1]
+
+    if bet_type == "simple":
+        ctx.user_data["state"] = AWAITING_BET_ODDS
+        ctx.user_data[AWAITING_BET_ODDS] = {"title": title}
+        await query.message.reply_text(
+            texts.ASK_BET_ODDS.format(title=title),
+            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 3.50 1.25"),
+        )
+    elif bet_type == "winner":
+        ctx.user_data["state"] = AWAITING_WINNER_OPTIONS
+        ctx.user_data[AWAITING_WINNER_OPTIONS] = {"title": title}
+        await query.message.reply_text(
+            texts.ASK_WINNER_OPTIONS.format(title=title),
+            reply_markup=ForceReply(selective=True, input_field_placeholder="Suomi @ 3.50"),
+        )
+
+
 async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -286,6 +321,61 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle option selection for winner bets."""
+    query = update.callback_query
+    await query.answer()
+
+    user = await db.get_user(query.from_user.id)
+    if not user:
+        await query.message.reply_text("Rekisteröidy ensin komennolla /start")
+        return
+
+    if await db.is_game_finished():
+        await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
+        return
+
+    _, bet_id_str, option_id_str = query.data.split(":")
+    bet_id = int(bet_id_str)
+    option_id = int(option_id_str)
+
+    bet = await db.get_bet(bet_id)
+    if not bet:
+        await query.message.reply_text(texts.BET_NOT_FOUND.format(id=bet_id))
+        return
+    if bet["status"] == "locked":
+        await query.answer(texts.BET_LOCKED.format(id=bet_id), show_alert=True)
+        return
+    if bet["status"] == "resolved":
+        await query.answer(texts.BET_RESOLVED.format(id=bet_id), show_alert=True)
+        return
+
+    options = await db.get_bet_options(bet_id)
+    option = next((o for o in options if o["id"] == option_id), None)
+    if not option:
+        await query.answer("Vaihtoehtoa ei löydy.", show_alert=True)
+        return
+
+    existing = await db.get_user_wager(user["id"], bet_id)
+    existing_info = ""
+    if existing:
+        ex_opt = next((o for o in options if o["id"] == existing.get("option_id")), None)
+        if ex_opt:
+            existing_info = f"\n(Nykyinen vetosi: {ex_opt['label']} {float(existing['amount']):.2f} €)"
+
+    ctx.user_data["state"] = AWAITING_AMOUNT
+    ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id}
+
+    await query.message.reply_text(
+        texts.ASK_AMOUNT.format(
+            bet_id=bet_id, title=bet["title"], side=option["label"],
+            odds=float(option["odds"]), balance=float(user["balance"]),
+            existing=existing_info,
+        ),
+        reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
+    )
+
+
 async def delete_bet_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -307,11 +397,34 @@ async def delete_bet_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     deleted = await db.delete_bet(bet_id)
     if deleted:
         await query.answer(f"Vetokohde #{bet_id} poistettu.")
-        # Refresh the kohteet view
         text, keyboard = await _build_kohteet(user)
         await query.message.edit_text(text, reply_markup=keyboard)
     else:
         await query.answer(texts.BET_DELETE_FORBIDDEN, show_alert=True)
+
+
+async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user = await db.get_user(query.from_user.id)
+    if not user:
+        return
+
+    if await db.is_game_finished():
+        await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
+        return
+
+    bet_id = int(query.data.split(":")[2])
+    refunded = await db.cancel_wager(user["id"], bet_id)
+    if refunded is None:
+        await query.answer("Vetoa ei voi peruuttaa — kohde ei ole enää auki.", show_alert=True)
+        return
+
+    await query.answer(f"Cashout! {refunded:.2f} € palautettu saldolle (5% maksu pidätetty).")
+    user = await db.get_user(query.from_user.id)
+    text, keyboard = await _build_omat(user)
+    await query.message.edit_text(text, reply_markup=keyboard)
 
 
 # ── Text message router ────────────────────────────────────────────────────────
@@ -324,6 +437,8 @@ async def text_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _handle_bet_title(update, ctx)
     elif state == AWAITING_BET_ODDS:
         await _handle_bet_odds(update, ctx)
+    elif state == AWAITING_WINNER_OPTIONS:
+        await _handle_winner_options(update, ctx)
 
 
 async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -344,7 +459,11 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.pop(AWAITING_AMOUNT, None)
 
     user = await db.get_user(update.effective_user.id)
-    await _process_wager(update.message, user, pending["bet_id"], pending["side"], amount, is_admin=user["is_admin"])
+    option_id = pending.get("option_id")
+    await _process_wager(
+        update.message, user, pending["bet_id"], pending["side"], amount,
+        is_admin=user["is_admin"], option_id=option_id,
+    )
 
 
 async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -354,12 +473,12 @@ async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=ForceReply(selective=True))
         return
 
-    ctx.user_data["state"] = AWAITING_BET_ODDS
-    ctx.user_data[AWAITING_BET_ODDS] = {"title": title}
+    ctx.user_data["state"] = AWAITING_BET_TYPE
+    ctx.user_data[AWAITING_BET_TYPE] = {"title": title}
 
     await update.message.reply_text(
-        texts.ASK_BET_ODDS.format(title=title),
-        reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 3.50 1.25"),
+        texts.ASK_BET_TYPE.format(title=title),
+        reply_markup=_bet_type_keyboard(),
     )
 
 
@@ -393,9 +512,47 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    pending = ctx.user_data.get(AWAITING_WINNER_OPTIONS, {})
+    title = pending.get("title", "")
+
+    lines = [l.strip() for l in update.message.text.strip().splitlines() if l.strip()]
+    options = []
+    for line in lines:
+        if "@" not in line:
+            await update.message.reply_text(texts.INVALID_WINNER_OPTIONS)
+            return
+        parts = line.rsplit("@", 1)
+        label = parts[0].strip()
+        try:
+            odds = float(parts[1].strip().replace(",", "."))
+            if odds <= 1.0 or not label:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(texts.INVALID_WINNER_OPTIONS)
+            return
+        options.append({"label": label, "odds": odds})
+
+    if len(options) < 2:
+        await update.message.reply_text(texts.INVALID_WINNER_OPTIONS)
+        return
+
+    ctx.user_data.pop("state", None)
+    ctx.user_data.pop(AWAITING_WINNER_OPTIONS, None)
+
+    user = await db.get_user(update.effective_user.id)
+    bet = await db.create_winner_bet(title, options, user["id"])
+    options_text = "".join(f"  {o['label']} @ {float(o['odds']):.2f}\n" for o in bet["options"])
+    await update.message.reply_text(
+        texts.WINNER_BET_CREATED.format(id=bet["id"], title=bet["title"], options=options_text),
+        reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
+    )
+
+
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
-async def _process_wager(message, user, bet_id: int, side: str, amount: float, is_admin=False):
+async def _process_wager(message, user, bet_id: int, side: str, amount: float,
+                         is_admin=False, option_id: int = None):
     bet = await db.get_bet(bet_id)
     if not bet:
         await message.reply_text(texts.BET_NOT_FOUND.format(id=bet_id))
@@ -415,11 +572,18 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float, i
         await message.reply_text(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"])))
         return
 
-    new_balance, updated = await db.place_wager(user["id"], bet_id, side, amount)
-    odds = float(bet["yes_odds"]) if side == "yes" else float(bet["no_odds"])
-    side_fi = "kyllä" if side == "yes" else "ei"
-    payout = amount * odds
+    new_balance, updated = await db.place_wager(user["id"], bet_id, side, amount, option_id=option_id)
 
+    if option_id is not None:
+        options = await db.get_bet_options(bet_id)
+        option = next((o for o in options if o["id"] == option_id), None)
+        odds = float(option["odds"]) if option else 0
+        side_fi = option["label"] if option else side
+    else:
+        odds = float(bet["yes_odds"]) if side == "yes" else float(bet["no_odds"])
+        side_fi = "kyllä" if side == "yes" else "ei"
+
+    payout = amount * odds
     template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
     await message.reply_text(
         template.format(bet_id=bet_id, side=side_fi, amount=amount, odds=odds, payout=payout, balance=new_balance),
@@ -447,67 +611,62 @@ async def _build_kohteet(user):
         w = my_wagers.get(b["id"])
         is_open = b["status"] == "open"
 
-        if is_open:
-            if w:
-                side_fi = "kyllä" if w["side"] == "yes" else "ei"
-                msg += texts.BET_ROW_OPEN_WITH_WAGER.format(
-                    id=b["id"], title=b["title"],
-                    yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                    side=side_fi, amount=float(w["amount"]),
-                )
-            else:
-                msg += texts.BET_ROW_OPEN.format(
-                    id=b["id"], title=b["title"],
-                    yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                )
-            if not game_done:
-                row = [
-                    InlineKeyboardButton(f"✅ Kyllä {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
-                    InlineKeyboardButton(f"❌ Ei {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
-                    InlineKeyboardButton("🗑️", callback_data=f"del:{b['id']}"),
-                ]
-                keyboard.append(row)
+        if b["bet_type"] == "winner":
+            options = await db.get_bet_options(b["id"])
+            status_icon = "" if is_open else "🔒 "
+            msg += f"#{b['id']} {status_icon}🏆 {b['title']}\n"
+            for o in options:
+                line = f"   {o['label']} @ {float(o['odds']):.2f}"
+                if w and w.get("option_id") == o["id"]:
+                    line += f"  ✅ {float(w['amount']):.2f} €"
+                msg += line + "\n"
+            if not is_open:
+                msg += "   · lukittu\n"
+            msg += "\n"
+            if is_open and not game_done:
+                for o in options:
+                    keyboard.append([InlineKeyboardButton(
+                        f"{o['label']} @ {float(o['odds']):.2f}",
+                        callback_data=f"opt:{b['id']}:{o['id']}",
+                    )])
+                keyboard.append([InlineKeyboardButton("🗑️", callback_data=f"del:{b['id']}")])
         else:
-            # locked
-            if w:
-                side_fi = "kyllä" if w["side"] == "yes" else "ei"
-                msg += texts.BET_ROW_LOCKED_WITH_WAGER.format(
-                    id=b["id"], title=b["title"],
-                    yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                    side=side_fi, amount=float(w["amount"]),
-                )
+            if is_open:
+                if w:
+                    side_fi = "kyllä" if w["side"] == "yes" else "ei"
+                    msg += texts.BET_ROW_OPEN_WITH_WAGER.format(
+                        id=b["id"], title=b["title"],
+                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
+                        side=side_fi, amount=float(w["amount"]),
+                    )
+                else:
+                    msg += texts.BET_ROW_OPEN.format(
+                        id=b["id"], title=b["title"],
+                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
+                    )
+                if not game_done:
+                    row = [
+                        InlineKeyboardButton(f"✅ Kyllä {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
+                        InlineKeyboardButton(f"❌ Ei {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
+                        InlineKeyboardButton("🗑️", callback_data=f"del:{b['id']}"),
+                    ]
+                    keyboard.append(row)
             else:
-                msg += texts.BET_ROW_LOCKED.format(
-                    id=b["id"], title=b["title"],
-                    yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                )
+                if w:
+                    side_fi = "kyllä" if w["side"] == "yes" else "ei"
+                    msg += texts.BET_ROW_LOCKED_WITH_WAGER.format(
+                        id=b["id"], title=b["title"],
+                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
+                        side=side_fi, amount=float(w["amount"]),
+                    )
+                else:
+                    msg += texts.BET_ROW_LOCKED.format(
+                        id=b["id"], title=b["title"],
+                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
+                    )
 
     keyboard.append(bottom_row)
     return msg, InlineKeyboardMarkup(keyboard)
-
-
-async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user = await db.get_user(query.from_user.id)
-    if not user:
-        return
-
-    if await db.is_game_finished():
-        await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
-        return
-
-    bet_id = int(query.data.split(":")[2])
-    refunded = await db.cancel_wager(user["id"], bet_id)
-    if refunded is None:
-        await query.answer("Vetoa ei voi peruuttaa — kohde ei ole enää auki.", show_alert=True)
-        return
-
-    await query.answer(f"Cashout! {refunded:.2f} € palautettu saldolle (5% maksu pidätetty).")
-    user = await db.get_user(query.from_user.id)
-    text, keyboard = await _build_omat(user)
-    await query.message.edit_text(text, reply_markup=keyboard)
 
 
 async def _build_omat(user):
@@ -519,8 +678,12 @@ async def _build_omat(user):
     msg = texts.MY_WAGERS_HEADER
     keyboard = []
     for w in wagers:
-        side_fi = "kyllä" if w["side"] == "yes" else "ei"
-        odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
+        if w["bet_type"] == "winner":
+            side_fi = w["option_label"] or "?"
+            odds = float(w["option_odds"]) if w["option_odds"] else 0.0
+        else:
+            side_fi = "kyllä" if w["side"] == "yes" else "ei"
+            odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
         msg += texts.WAGER_ROW.format(
             bet_id=w["bet_id"], title=w["title"], side=side_fi,
             amount=float(w["amount"]), odds=odds,
