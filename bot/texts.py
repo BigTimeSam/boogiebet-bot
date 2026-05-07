@@ -97,7 +97,9 @@ WAGER_ROW = "#{bet_id} {title}\n{icon} {side} – {amount:.0f} € @ {odds:.2f}{
 
 LEADERBOARD_HEADER = "🏆 Tulostaulu\n\n"
 
-LEADERBOARD_ROW = "{rank}. {username}: {balance:.0f} € (maksimivoitto {potential:.0f} €)\n"
+LEADERBOARD_ROW_NO_WAGERS = "{rank}. {username}: {balance:.0f} € (0 vetoa)\n"
+LEADERBOARD_ROW_ONE_WAGER = "{rank}. {username}: {balance:.0f} € (1 veto, maksimivoitto {potential:.0f} €)\n"
+LEADERBOARD_ROW_MANY_WAGERS = "{rank}. {username}: {balance:.0f} € ({count} vetoa, maksimivoitto {potential:.0f} €)\n"
 
 GAME_FINISHED_HEADER = "🏆 Lopulliset tulokset\n\n"
 

@@ -333,7 +333,8 @@ async def get_leaderboard():
     return [dict(r) for r in rows]
 
 
-async def get_all_users_potential_winnings():
+async def get_all_users_wager_stats():
+    """Returns {telegram_id: (wager_count, potential_payout)} for open/locked bets."""
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT w.user_id, u.telegram_id, w.amount, w.side, b.yes_odds, b.no_odds, "
@@ -344,7 +345,7 @@ async def get_all_users_potential_winnings():
         "LEFT JOIN bet_options bo ON bo.id = w.option_id "
         "WHERE b.status IN ('open', 'locked')"
     )
-    payouts: dict[int, float] = {}
+    stats: dict[int, list] = {}
     for r in rows:
         tid = r["telegram_id"]
         amount = float(r["amount"])
@@ -353,8 +354,11 @@ async def get_all_users_potential_winnings():
         else:
             odds = float(r["yes_odds"]) if r["side"] == "yes" else float(r["no_odds"])
             payout = amount * odds
-        payouts[tid] = payouts.get(tid, 0.0) + payout
-    return payouts
+        if tid not in stats:
+            stats[tid] = [0, 0.0]
+        stats[tid][0] += 1
+        stats[tid][1] += payout
+    return {tid: (v[0], v[1]) for tid, v in stats.items()}
 
 
 async def has_resolved_bets():

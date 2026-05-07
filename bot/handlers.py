@@ -772,7 +772,7 @@ async def _build_leaderboard():
         return "Ei pelaajia vielä."
 
     game_done = await db.is_game_finished()
-    payouts = {} if game_done else await db.get_all_users_potential_winnings()
+    wager_stats = {} if game_done else await db.get_all_users_wager_stats()
     header = texts.GAME_FINISHED_HEADER if game_done else texts.LEADERBOARD_HEADER
     msg = header
     for i, row in enumerate(rows, 1):
@@ -781,8 +781,13 @@ async def _build_leaderboard():
         if game_done:
             msg += texts.GAME_FINISHED_ROW.format(rank=i, username=name, balance=balance)
         else:
-            potential = balance + payouts.get(row["telegram_id"], 0.0)
-            msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=balance, potential=potential)
+            count, payout = wager_stats.get(row["telegram_id"], (0, 0.0))
+            if count == 0:
+                msg += texts.LEADERBOARD_ROW_NO_WAGERS.format(rank=i, username=name, balance=balance)
+            elif count == 1:
+                msg += texts.LEADERBOARD_ROW_ONE_WAGER.format(rank=i, username=name, balance=balance, potential=balance + payout)
+            else:
+                msg += texts.LEADERBOARD_ROW_MANY_WAGERS.format(rank=i, username=name, balance=balance, count=count, potential=balance + payout)
     if game_done:
         msg += texts.GAME_FINISHED_NOTICE
     return msg
