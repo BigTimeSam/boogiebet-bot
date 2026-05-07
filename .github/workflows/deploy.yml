@@ -100,8 +100,11 @@ jobs:
           trap cleanup EXIT
 
           until docker exec "$TEST_DB" pg_isready -U boogiebet -q; do sleep 1; done
-          docker exec -i "$TEST_DB" psql -U boogiebet -d boogiebet \
-            < "$DEPLOY_PATH/init.sql"
+          for i in $(seq 1 10); do
+            docker exec -i "$TEST_DB" psql -U boogiebet -d boogiebet \
+              < "$DEPLOY_PATH/init.sql" && break
+            sleep 2
+          done
 
           docker run --rm \
             --network "$TEST_NET" \
