@@ -102,7 +102,7 @@ async def ratkaise(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     winners = await db.resolve_bet(bet_id, result)
     result_fi = "Kyllä ✅" if result == "yes" else "Ei ❌"
     winners_text = "".join(
-        texts.WINNER_ROW.format(username=w["username"], profit=w["profit"], balance=w["balance"])
+        texts.WINNER_ROW.format(username=w["username"], profit=w["profit"])
         for w in winners
     ) if winners else texts.NO_WINNERS
     await update.message.reply_text(texts.H(texts.BET_RESOLVED_MSG.format(
@@ -303,7 +303,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             winners = await db.resolve_bet(bet_id, value)
             result_fi = "Kyllä ✅" if value == "yes" else "Ei ❌"
         winners_text = "".join(
-            texts.WINNER_ROW.format(username=w["username"], profit=w["profit"], balance=w["balance"])
+            texts.WINNER_ROW.format(username=w["username"], profit=w["profit"])
             for w in winners
         ) if winners else texts.NO_WINNERS
         msg = texts.BET_RESOLVED_MSG.format(

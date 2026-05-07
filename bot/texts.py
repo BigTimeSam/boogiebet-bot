@@ -135,7 +135,7 @@ BET_RESOLVED_MSG = (
 
 NO_WINNERS = "  Ei voittajia tässä kohteessa."
 
-WINNER_ROW = "  {username}: +{profit:.2f} € → {balance:.2f} €\n"
+WINNER_ROW = "🏆 {username}: +{profit:.2f} €\n"
 
 NOT_ADMIN = "❌ Tämä komento on vain admineille."
 
