@@ -570,21 +570,12 @@ async def _build_kohteet(user):
 
         if b["bet_type"] == "winner":
             options = await db.get_bet_options(b["id"])
-            status_icon = "" if is_open else "🔒 "
-            msg += f"#{b['id']} {status_icon}🏆 {b['title']}\n"
-            for o in options:
-                line = f"   {o['label']} @ {float(o['odds']):.2f}"
-                if w and w.get("option_id") == o["id"]:
-                    line += f"  ✅ {float(w['amount']):.2f} €"
-                msg += line + "\n"
-            if not is_open:
-                msg += "   · lukittu\n"
-            msg += "\n"
             if is_open and not game_done:
-                keyboard.append([InlineKeyboardButton(
-                    f"🏆 #{b['id']} {b['title']}",
-                    callback_data=f"noop:{b['id']}",
-                )])
+                my_label = next((o["label"] for o in options if w and w.get("option_id") == o["id"]), None)
+                title_text = f"🏆 #{b['id']} {b['title']}"
+                if my_label:
+                    title_text += f"  ✅ {my_label} {float(w['amount']):.2f} €"
+                keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
                 keyboard.append([
                     InlineKeyboardButton(
                         f"{o['label']} @ {float(o['odds']):.2f}",
@@ -592,6 +583,12 @@ async def _build_kohteet(user):
                     )
                     for o in options[:4]
                 ])
+            else:
+                my_label = next((o["label"] for o in options if w and w.get("option_id") == o["id"]), None)
+                title_text = f"🔒 #{b['id']} {b['title']}"
+                if my_label:
+                    title_text += f"  ✅ {my_label} {float(w['amount']):.2f} €"
+                keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
         else:
             if is_open:
                 if w:
