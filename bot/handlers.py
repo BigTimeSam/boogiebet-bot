@@ -675,7 +675,7 @@ async def _build_omat(user):
 
         amount = float(w["amount"])
         if w["status"] == "open":
-            icon, extra = "🎯", " (avoinna)"
+            icon, extra = "🎯", ""
         elif w["status"] == "locked":
             icon, extra = "🔒", ""
         elif won:
