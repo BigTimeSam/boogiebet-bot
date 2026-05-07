@@ -311,6 +311,9 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     existing_amount = int(float(existing["amount"])) if existing else 0
     remaining = int(MAX_WAGER) - existing_amount
+    if existing and remaining <= 0:
+        await query.answer(f"Olet jo panostanut maksimin ({int(MAX_WAGER)} €) tähän kohteeseen.", show_alert=True)
+        return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
     ctx.user_data["state"] = AWAITING_AMOUNT
@@ -369,6 +372,9 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     existing_amount = int(float(existing["amount"])) if existing else 0
     remaining = int(MAX_WAGER) - existing_amount
+    if existing and remaining <= 0:
+        await query.answer(f"Olet jo panostanut maksimin ({int(MAX_WAGER)} €) tähän kohteeseen.", show_alert=True)
+        return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
     ctx.user_data["state"] = AWAITING_AMOUNT
