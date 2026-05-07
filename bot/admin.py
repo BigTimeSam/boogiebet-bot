@@ -99,9 +99,6 @@ async def ratkaise(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if bet["status"] == "resolved":
         await update.message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
         return
-    if bet["status"] == "open":
-        await update.message.reply_text(texts.H("❌ Lukitse kohde ensin komennolla /lukitse " + str(bet_id)))
-        return
     winners = await db.resolve_bet(bet_id, result)
     result_fi = "Kyllä ✅" if result == "yes" else "Ei ❌"
     winners_text = "".join(
@@ -224,13 +221,13 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif action == "resolve_list":
         all_bets = await db.get_active_bets()
-        locked = [b for b in all_bets if b["status"] == "locked"]
-        if not locked:
+        unresolved = [b for b in all_bets if b["status"] in ("open", "locked")]
+        if not unresolved:
             await query.message.edit_text(texts.H(texts.ADMIN_NO_LOCKED_BETS), reply_markup=admin_panel_keyboard())
             return
         keyboard = [
             [InlineKeyboardButton(f"#{b['id']} {b['title']}", callback_data=f"adm:resolve:{b['id']}")]
-            for b in locked
+            for b in unresolved
         ]
         keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
         await query.message.edit_text(texts.H(texts.ADMIN_RESOLVE_LIST), reply_markup=InlineKeyboardMarkup(keyboard))
@@ -277,9 +274,6 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         if bet["status"] == "resolved":
             await query.answer(texts.BET_RESOLVED.format(id=bet_id), show_alert=True)
-            return
-        if bet["status"] == "open":
-            await query.answer("Lukitse kohde ensin.", show_alert=True)
             return
         if bet["bet_type"] == "winner":
             winning_option_id = int(value)
