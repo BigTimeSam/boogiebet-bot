@@ -20,6 +20,7 @@ def main():
 
     # User commands
     app.add_handler(CommandHandler("start", handlers.start))
+    app.add_handler(CommandHandler("help", handlers.help_command))
     app.add_handler(CommandHandler("saldo", handlers.saldo))
     app.add_handler(CommandHandler("kohteet", handlers.kohteet))
     app.add_handler(CommandHandler("vetoa", handlers.vetoa))
@@ -29,13 +30,13 @@ def main():
     app.add_handler(CommandHandler("tulokset", handlers.tulokset))
 
     # Admin commands
-    app.add_handler(CommandHandler("register", admin.register))
-    app.add_handler(CommandHandler("admin", admin.admin_help))
+    app.add_handler(CommandHandler("admin", admin.register))
     app.add_handler(CommandHandler("lukitse", admin.lukitse))
     app.add_handler(CommandHandler("ratkaise", admin.ratkaise))
     app.add_handler(CommandHandler("lopeta", admin.lopeta_confirm))
 
     # Inline keyboard callbacks
+    app.add_handler(CallbackQueryHandler(admin.admin_callback, pattern=r"^adm:"))
     app.add_handler(CallbackQueryHandler(handlers.nav_callback, pattern=r"^nav:"))
     app.add_handler(CallbackQueryHandler(handlers.bet_side_callback, pattern=r"^bet:"))
     app.add_handler(CallbackQueryHandler(handlers.delete_bet_callback, pattern=r"^del:"))

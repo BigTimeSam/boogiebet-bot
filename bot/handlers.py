@@ -9,8 +9,8 @@ AWAITING_BET_TITLE = "awaiting_bet_title"
 AWAITING_BET_ODDS = "awaiting_bet_odds"
 
 
-def main_menu_keyboard():
-    return InlineKeyboardMarkup([
+def main_menu_keyboard(is_admin=False):
+    rows = [
         [
             InlineKeyboardButton("📋 Kohteet", callback_data="nav:kohteet"),
             InlineKeyboardButton("🎯 Omat vedot", callback_data="nav:omat"),
@@ -19,7 +19,10 @@ def main_menu_keyboard():
             InlineKeyboardButton("🏆 Tulostaulu", callback_data="nav:tulokset"),
             InlineKeyboardButton("💰 Saldo", callback_data="nav:saldo"),
         ],
-    ])
+    ]
+    if is_admin:
+        rows.append([InlineKeyboardButton("🔧 Admin-paneeli", callback_data="adm:panel")])
+    return InlineKeyboardMarkup(rows)
 
 
 def back_keyboard():
@@ -32,7 +35,16 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     template = texts.WELCOME_NEW if created else texts.WELCOME_BACK
     await update.message.reply_text(
         template.format(name=tg.first_name, balance=float(user["balance"])),
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
+    )
+
+
+async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    is_admin = user["is_admin"] if user else False
+    await update.message.reply_text(
+        texts.HELP_TEXT,
+        reply_markup=main_menu_keyboard(is_admin=is_admin),
     )
 
 
@@ -199,7 +211,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if action == "main":
         await query.message.edit_text(
             texts.WELCOME_BACK.format(name=query.from_user.first_name, balance=float(user["balance"])),
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
         )
     elif action == "saldo":
         await query.message.edit_text(
@@ -332,7 +344,7 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.pop(AWAITING_AMOUNT, None)
 
     user = await db.get_user(update.effective_user.id)
-    await _process_wager(update.message, user, pending["bet_id"], pending["side"], amount)
+    await _process_wager(update.message, user, pending["bet_id"], pending["side"], amount, is_admin=user["is_admin"])
 
 
 async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -377,13 +389,13 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             id=bet["id"], title=bet["title"],
             yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
         ),
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
     )
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
-async def _process_wager(message, user, bet_id: int, side: str, amount: float):
+async def _process_wager(message, user, bet_id: int, side: str, amount: float, is_admin=False):
     bet = await db.get_bet(bet_id)
     if not bet:
         await message.reply_text(texts.BET_NOT_FOUND.format(id=bet_id))
@@ -411,7 +423,7 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float):
     template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
     await message.reply_text(
         template.format(bet_id=bet_id, side=side_fi, amount=amount, odds=odds, payout=payout, balance=new_balance),
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(is_admin=is_admin),
     )
 
 

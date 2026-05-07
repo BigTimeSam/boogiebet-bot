@@ -103,8 +103,8 @@ ADMIN_HELP = (
     "  → ratkaise lukittu kohde ja maksa voitot\n\n"
     "/lopeta\n"
     "  → lopeta peli ja julkaise lopulliset tulokset\n\n"
-    "/admin\n"
-    "  → näytä tämä ohje"
+    "/admin <salasana>\n"
+    "  → rekisteröidy adminiksi"
 )
 
 BET_RESOLVED_MSG = (
@@ -121,3 +121,28 @@ WINNER_ROW = "  {username}: +{profit:.2f} € → {balance:.2f} €\n"
 NOT_ADMIN = "❌ Tämä komento on vain admineille."
 
 CANCEL_CREATION = "Luonti peruttu."
+
+HELP_TEXT = (
+    "📖 boogieBet — komennot\n\n"
+    "/start — rekisteröidy ja avaa päävalikko\n"
+    "/kohteet — selaa vetokohteita ja tee vetoja\n"
+    "/omat — näytä omat aktiiviset vetosi\n"
+    "/tulokset — tulostaulu ja saldot\n"
+    "/saldo — tarkista oma saldosi\n"
+    "/help — näytä tämä ohje\n\n"
+    "Voit myös käyttää nappeja päävalikossa 👇"
+)
+
+ADMIN_PANEL = "🔧 Admin-paneeli\n\nMitä haluat tehdä?"
+
+ADMIN_LOCK_LIST = "🔒 Valitse lukittava kohde:"
+
+ADMIN_RESOLVE_LIST = "✅ Valitse ratkaistava kohde:"
+
+ADMIN_RESOLVE_SIDE = "#{id} {title}\n\nMikä oli tulos?"
+
+ADMIN_FINISH_CONFIRM = "⚠️ Haluatko varmasti lopettaa pelin?\n\nTätä ei voi peruuttaa."
+
+ADMIN_NO_OPEN_BETS = "Ei avoimia kohteita lukittavaksi."
+
+ADMIN_NO_LOCKED_BETS = "Ei lukittuja kohteita ratkaistaksi."
