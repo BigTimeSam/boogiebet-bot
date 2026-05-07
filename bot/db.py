@@ -368,6 +368,25 @@ async def set_game_finished():
     await pool.execute("UPDATE settings SET value = 'true' WHERE key = 'game_finished'")
 
 
+async def get_resolved_bets_with_winners():
+    pool = await get_pool()
+    rows = await pool.fetch("""
+        SELECT
+            b.id AS bet_id, b.title, b.result, b.bet_type,
+            b.yes_odds, b.no_odds,
+            u.username,
+            w.amount, w.side, w.option_id,
+            bo.label AS option_label, bo.odds AS option_odds
+        FROM bets b
+        JOIN wagers w ON w.bet_id = b.id
+        JOIN users u ON u.id = w.user_id
+        LEFT JOIN bet_options bo ON bo.id = w.option_id
+        WHERE b.status = 'resolved'
+        ORDER BY b.id, u.username
+    """)
+    return [dict(r) for r in rows]
+
+
 async def reset_game():
     pool = await get_pool()
     async with pool.acquire() as conn:

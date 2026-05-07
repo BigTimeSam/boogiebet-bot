@@ -32,6 +32,18 @@ def back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")]])
 
 
+def results_keyboard(active: str):
+    tb = "noop:tb" if active == "tulokset" else "nav:tulokset"
+    vt = "noop:vt" if active == "voittajat" else "nav:voittajat"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📊 Tulostaulu", callback_data=tb),
+            InlineKeyboardButton("🏆 Voittajat", callback_data=vt),
+        ],
+        [InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")],
+    ])
+
+
 def _bet_type_keyboard():
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("⚖️ Kyllä / Ei", callback_data="bet_type:simple"),
@@ -104,7 +116,7 @@ async def cmd_my_bets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_results(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = await _build_leaderboard()
-    await update.message.reply_text(texts.H(text))
+    await update.message.reply_text(texts.H(text), reply_markup=results_keyboard("tulokset"))
 
 
 async def cmd_place_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -237,7 +249,10 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(text), reply_markup=keyboard)
     elif action == "tulokset":
         text = await _build_leaderboard()
-        await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
+        await query.message.edit_text(texts.H(text), reply_markup=results_keyboard("tulokset"))
+    elif action == "voittajat":
+        text = await _build_winners()
+        await query.message.edit_text(texts.H(text), reply_markup=results_keyboard("voittajat"))
     elif action == "new_bet":
         if not user["is_admin"]:
             await query.answer(texts.NOT_ADMIN, show_alert=True)
@@ -700,6 +715,51 @@ async def _build_my_bets(user):
             keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
     keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])
     return msg, InlineKeyboardMarkup(keyboard)
+
+
+async def _build_winners():
+    rows = await db.get_resolved_bets_with_winners()
+    if not rows:
+        return texts.WINNERS_NO_RESOLVED
+
+    # Group rows by bet
+    bets_seen: list[int] = []
+    by_bet: dict[int, list] = {}
+    for r in rows:
+        bid = r["bet_id"]
+        if bid not in by_bet:
+            bets_seen.append(bid)
+            by_bet[bid] = []
+        by_bet[bid].append(r)
+
+    msg = texts.WINNERS_HEADER
+    for bid in bets_seen:
+        wagers = by_bet[bid]
+        first = wagers[0]
+        msg += texts.WINNERS_BET_SECTION.format(id=bid, title=first["title"])
+
+        winners = []
+        for w in wagers:
+            if first["bet_type"] == "winner":
+                if str(w["option_id"]) == str(first["result"]):
+                    profit = float(w["amount"]) * float(w["option_odds"])
+                    winners.append((w["username"] or f"user{bid}", float(w["amount"]), profit))
+            else:
+                if w["side"] == first["result"]:
+                    odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
+                    profit = float(w["amount"]) * odds
+                    winners.append((w["username"] or f"user{bid}", float(w["amount"]), profit))
+
+        if winners:
+            for username, amount, profit in winners:
+                msg += texts.WINNERS_PLAYER_ROW.format(
+                    username=username, amount=amount, profit=profit
+                )
+        else:
+            msg += texts.WINNERS_NO_PLAYERS
+        msg += "\n"
+
+    return msg.rstrip()
 
 
 async def _build_leaderboard():
