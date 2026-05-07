@@ -330,6 +330,9 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if existing and remaining <= 0:
         await query.answer(f"Olet jo panostanut maksimin ({int(MAX_WAGER)} €) tähän kohteeseen.", show_alert=True)
         return
+    if not existing and float(user["balance"]) < MIN_WAGER:
+        await query.answer(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"])), show_alert=True)
+        return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
     await query.answer()
@@ -392,6 +395,9 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     remaining = int(MAX_WAGER) - existing_amount
     if existing and remaining <= 0:
         await query.answer(f"Olet jo panostanut maksimin ({int(MAX_WAGER)} €) tähän kohteeseen.", show_alert=True)
+        return
+    if not existing and float(user["balance"]) < MIN_WAGER:
+        await query.answer(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"])), show_alert=True)
         return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
