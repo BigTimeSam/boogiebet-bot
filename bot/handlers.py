@@ -739,23 +739,34 @@ async def _build_winners():
         msg += texts.WINNERS_BET_SECTION.format(id=bid, title=first["title"])
 
         winners = []
+        losers = []
         for w in wagers:
+            name = w["username"] or f"user{bid}"
+            amount = float(w["amount"])
             if first["bet_type"] == "winner":
                 if str(w["option_id"]) == str(first["result"]):
-                    profit = float(w["amount"]) * float(w["option_odds"])
-                    winners.append((w["username"] or f"user{bid}", float(w["amount"]), profit))
+                    winners.append((name, amount * float(w["option_odds"])))
+                else:
+                    losers.append((name, amount))
             else:
                 if w["side"] == first["result"]:
                     odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
-                    profit = float(w["amount"]) * odds
-                    winners.append((w["username"] or f"user{bid}", float(w["amount"]), profit))
+                    winners.append((name, amount * odds))
+                else:
+                    losers.append((name, amount))
 
         if winners:
             winners.sort(key=lambda x: x[0].lower())
-            parts = [f"{name} (+{profit:,.0f} €)".replace(",", " ") for name, _, profit in winners]
+            parts = [f"{name} (+{profit:,.0f} €)".replace(",", " ") for name, profit in winners]
             msg += "🏆 " + ", ".join(parts) + "\n"
         else:
             msg += texts.WINNERS_NO_PLAYERS
+
+        if losers:
+            losers.sort(key=lambda x: x[0].lower())
+            parts = [f"{name} (-{amount:,.0f} €)".replace(",", " ") for name, amount in losers]
+            msg += "🚫 " + ", ".join(parts) + "\n"
+
         msg += "\n"
 
     return msg.rstrip()
