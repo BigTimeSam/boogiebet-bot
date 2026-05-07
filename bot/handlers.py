@@ -127,6 +127,9 @@ async def uusiveto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
         return
+    if not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
     if await db.is_game_finished():
         await update.message.reply_text(texts.H(texts.GAME_OVER_BLOCK))
         return
@@ -219,6 +222,9 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = await _build_tulokset()
         await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
     elif action == "new_bet":
+        if not user["is_admin"]:
+            await query.answer(texts.NOT_ADMIN, show_alert=True)
+            return
         if await db.is_game_finished():
             await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
             return
@@ -575,7 +581,7 @@ async def _build_kohteet(user):
     my_wagers = {w["bet_id"]: w for w in await db.get_user_wagers_with_bets(user["id"])}
 
     bottom_row = []
-    if not game_done:
+    if not game_done and user["is_admin"]:
         bottom_row.append(InlineKeyboardButton("➕ Uusi kohde", callback_data="nav:new_bet"))
     bottom_row.append(InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main"))
 
