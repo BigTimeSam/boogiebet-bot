@@ -632,39 +632,14 @@ async def _build_kohteet(user):
                 ])
         else:
             if is_open:
-                if w:
-                    side_fi = "kyllä" if w["side"] == "yes" else "ei"
-                    msg += texts.BET_ROW_OPEN_WITH_WAGER.format(
-                        id=b["id"], title=b["title"],
-                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                        side=side_fi, amount=float(w["amount"]),
-                    )
-                else:
-                    msg += texts.BET_ROW_OPEN.format(
-                        id=b["id"], title=b["title"],
-                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                    )
                 if not game_done:
-                    side_fi = "kyllä" if w and w["side"] == "yes" else "ei" if w else None
-                    title_text = f"⚖️ #{b['id']} {b['title']}"
-                    keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
+                    keyboard.append([InlineKeyboardButton(f"⚖️ #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
                     keyboard.append([
-                        InlineKeyboardButton(f"✅ Kyllä {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
-                        InlineKeyboardButton(f"❌ Ei {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
+                        InlineKeyboardButton(f"✅ Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
+                        InlineKeyboardButton(f"❌ Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
                     ])
             else:
-                if w:
-                    side_fi = "kyllä" if w["side"] == "yes" else "ei"
-                    msg += texts.BET_ROW_LOCKED_WITH_WAGER.format(
-                        id=b["id"], title=b["title"],
-                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                        side=side_fi, amount=float(w["amount"]),
-                    )
-                else:
-                    msg += texts.BET_ROW_LOCKED.format(
-                        id=b["id"], title=b["title"],
-                        yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
-                    )
+                keyboard.append([InlineKeyboardButton(f"⚖️ 🔒 #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
 
     keyboard.append(bottom_row)
     return msg, InlineKeyboardMarkup(keyboard)
