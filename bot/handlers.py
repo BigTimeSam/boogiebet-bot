@@ -40,12 +40,23 @@ def _bet_type_keyboard():
     ]])
 
 
+async def _main_text(user, name: str = None, is_new: bool = False) -> str:
+    balance = float(user["balance"])
+    if is_new and name:
+        base = texts.WELCOME_NEW.format(name=name, balance=balance)
+    else:
+        base = texts.WELCOME_BACK.format(balance=balance)
+    wagered, payout = await db.get_user_open_wager_stats(user["id"])
+    if wagered > 0:
+        base += "\n" + texts.WAGER_STATS.format(wagered=wagered, potential=balance + payout)
+    return base
+
+
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg = update.effective_user
     user, created = await db.get_or_create_user(tg.id, tg.username or tg.first_name)
-    template = texts.WELCOME_NEW if created else texts.WELCOME_BACK
     await update.message.reply_text(
-        texts.H(template.format(name=tg.first_name, balance=float(user["balance"]))),
+        texts.H(await _main_text(user, name=tg.first_name, is_new=created)),
         reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
     )
 
@@ -204,7 +215,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if action == "main":
         await query.message.edit_text(
-            texts.H(texts.WELCOME_BACK.format(name=query.from_user.first_name, balance=float(user["balance"]))),
+            texts.H(await _main_text(user)),
             reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
         )
     elif action == "saldo":
@@ -231,7 +242,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["state"] = AWAITING_BET_TITLE
         await query.message.reply_text(
             texts.H(texts.ASK_BET_TITLE),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. Voittaako Suomi?"),
+            reply_markup=ForceReply(selective=True),
         )
 
 

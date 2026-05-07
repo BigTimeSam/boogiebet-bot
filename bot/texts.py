@@ -2,8 +2,11 @@ import os
 import functools
 
 _HEADER_TEMPLATE = (
-    "🎰 boogieBet {version} – Jokaisella on 1000 € leikkirahaa ja liikaa itseluottamusta. "
-    "Katsotaan kenen käy hyvin."
+    "🎰 boogieBet {version} – On aika selvittää, kuka tietää ja kuka ei "
+    "(vaikka proffahan sen tietää). Sinulla on 1000 €, jotka tulee panostaa eri kohteisiin. "
+    "Minimipanos on 1 € ja maksimipanos 200 € per kohde. Kaikkia rahoja ei ole pakko panostaa, "
+    "ja voit vaihtaa mielipidettäsi, mutta jo lyödyn vedon cashout palauttaa vain 95 % rahoista "
+    "takaisin saldoon. Onnea matkaan! 🍀"
 )
 
 
@@ -17,17 +20,15 @@ def H(text: str) -> str:
     return _header() + "\n\n" + text
 
 
-WELCOME_NEW = (
-    "Tervetuloa, {name}!\n\n"
-    "Lähtösaldosi on 1 000,00 €.\n"
-    "Lisää vetokohteita, tee vetoja — paras saldo voittaa!"
-)
+WELCOME_NEW = "Tervetuloa, {name}!\n\nSaldo: {balance:.2f} €"
 
-WELCOME_BACK = "Hei {name}! Saldosi: {balance:.2f} €"
+WELCOME_BACK = "Saldo: {balance:.2f} €"
+
+WAGER_STATS = "Avoimissa vedoissa: {wagered:.2f} €. Jos kaikki vetosi osuvat, voit voittaa {potential:.2f} €."
 
 BALANCE = "💰 Saldosi: {balance:.2f} €"
 
-NO_BETS = "Ei vetokohteita vielä.\n\nLisää ensimmäinen kohde napista alla! 👇"
+NO_BETS = "Ei vetokohteita vielä. Tee valitus orgalle."
 
 BET_LIST_HEADER = "📋 Vetokohteet\n\n"
 

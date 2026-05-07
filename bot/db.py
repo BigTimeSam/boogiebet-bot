@@ -294,6 +294,29 @@ async def get_user_wagers_with_bets(user_id: int):
     return [dict(r) for r in rows]
 
 
+async def get_user_open_wager_stats(user_id: int):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT w.amount, w.side, b.yes_odds, b.no_odds, b.bet_type, bo.odds AS option_odds "
+        "FROM wagers w "
+        "JOIN bets b ON b.id = w.bet_id "
+        "LEFT JOIN bet_options bo ON bo.id = w.option_id "
+        "WHERE w.user_id = $1 AND b.status IN ('open', 'locked')",
+        user_id,
+    )
+    total_wagered = 0.0
+    total_payout = 0.0
+    for r in rows:
+        amount = float(r["amount"])
+        total_wagered += amount
+        if r["bet_type"] == "winner":
+            total_payout += amount * float(r["option_odds"])
+        else:
+            odds = float(r["yes_odds"]) if r["side"] == "yes" else float(r["no_odds"])
+            total_payout += amount * odds
+    return total_wagered, total_payout
+
+
 async def get_leaderboard():
     pool = await get_pool()
     rows = await pool.fetch(
