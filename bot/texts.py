@@ -57,9 +57,9 @@ ASK_AMOUNT = (
     "Syötä vetosumma euroissa ({min:.0f}–{max:.0f} €):"
 )
 
-WAGER_PLACED = "✅ Veto lyöty!\n#{bet_id} {side} – {amount:.0f} € @ {odds:.2f}\nVoi voittaa: {payout:.0f} €\n\nSaldosi nyt: {balance:.0f} €"
+WAGER_PLACED = "✅ Veto lyöty!\n#{bet_id} {title} {side_icon} {side}\nPanos: {amount:.0f} € @ {odds:.2f} | Voit voittaa: {payout:.0f} €\n\nSaldosi nyt: {balance:.0f} €"
 
-WAGER_UPDATED = "🔄 Veto päivitetty!\n#{bet_id} {side} – {amount:.0f} € @ {odds:.2f}\nVoi voittaa: {payout:.0f} €\n\nSaldosi nyt: {balance:.0f} €"
+WAGER_UPDATED = "🔄 Veto päivitetty!\n#{bet_id} {title} {side_icon} {side}\nPanos: {amount:.0f} € @ {odds:.2f} | Voit voittaa: {payout:.0f} €\n\nSaldosi nyt: {balance:.0f} €"
 
 NOT_ENOUGH_BALANCE = "❌ Ei tarpeeksi saldoa! Saldosi: {balance:.0f} €"
 

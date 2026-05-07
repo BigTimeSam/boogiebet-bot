@@ -608,14 +608,19 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         option = next((o for o in options if o["id"] == option_id), None)
         odds = float(option["odds"]) if option else 0
         side_fi = option["label"] if option else side
+        side_icon = "🏅"
     else:
         odds = float(bet["yes_odds"]) if side == "yes" else float(bet["no_odds"])
         side_fi = "Kyllä" if side == "yes" else "Ei"
+        side_icon = "✅" if side == "yes" else "❌"
 
     payout = new_total * odds
     template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
     await message.reply_text(
-        texts.H(template.format(bet_id=bet_id, side=side_fi, amount=new_total, odds=odds, payout=payout, balance=new_balance)),
+        texts.H(template.format(
+            bet_id=bet_id, title=bet["title"], side=side_fi, side_icon=side_icon,
+            amount=new_total, odds=odds, payout=payout, balance=new_balance,
+        )),
         reply_markup=await _main_keyboard(user),
     )
     return False
