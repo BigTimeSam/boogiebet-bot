@@ -630,7 +630,7 @@ async def _build_kohteet(user):
             options = await db.get_bet_options(b["id"])
             my_label = next((o["label"] for o in options if w and w.get("option_id") == o["id"]), None)
             prefix = "" if is_open else "🔒 "
-            title_text = f"🏆 #{b['id']} {prefix}{b['title']}"
+            title_text = f"{prefix}🏆 #{b['id']} {b['title']}"
             keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
             if is_open and not game_done:
                 keyboard.append([
@@ -649,7 +649,7 @@ async def _build_kohteet(user):
                         InlineKeyboardButton(f"❌ Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
                     ])
             else:
-                keyboard.append([InlineKeyboardButton(f"⚖️ 🔒 #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
+                keyboard.append([InlineKeyboardButton(f"🔒 ⚖️ #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
 
     keyboard.append(bottom_row)
     return msg, InlineKeyboardMarkup(keyboard)
