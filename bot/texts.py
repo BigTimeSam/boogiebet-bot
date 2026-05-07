@@ -60,7 +60,7 @@ ASK_AMOUNT = (
     "Syötä vetosumma euroissa ({min:.0f}–{max:.0f} €):"
 )
 
-WAGER_PLACED = "✅ Veto tehty!\n#{bet_id} {side} – {amount:.2f} € @ {odds:.2f}\nVoi voittaa: {payout:.2f} €\n\nSaldosi nyt: {balance:.2f} €"
+WAGER_PLACED = "✅ Veto lyöty!\n#{bet_id} {side} – {amount:.2f} € @ {odds:.2f}\nVoi voittaa: {payout:.2f} €\n\nSaldosi nyt: {balance:.2f} €"
 
 WAGER_UPDATED = "🔄 Veto päivitetty!\n#{bet_id} {side} – {amount:.2f} € @ {odds:.2f}\nVoi voittaa: {payout:.2f} €\n\nSaldosi nyt: {balance:.2f} €"
 
