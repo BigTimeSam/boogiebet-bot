@@ -70,8 +70,8 @@ async def omat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not user:
         await update.message.reply_text("Rekisteröidy ensin komennolla /start")
         return
-    text = await _build_omat(user)
-    await update.message.reply_text(text)
+    text, keyboard = await _build_omat(user)
+    await update.message.reply_text(text, reply_markup=keyboard)
 
 
 async def tulokset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -222,8 +222,8 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text, keyboard = await _build_kohteet(user)
         await query.message.edit_text(text, reply_markup=keyboard)
     elif action == "omat":
-        text = await _build_omat(user)
-        await query.message.edit_text(text, reply_markup=back_keyboard())
+        text, keyboard = await _build_omat(user)
+        await query.message.edit_text(text, reply_markup=keyboard)
     elif action == "tulokset":
         text = await _build_tulokset()
         await query.message.edit_text(text, reply_markup=back_keyboard())
@@ -486,13 +486,38 @@ async def _build_kohteet(user):
     return msg, InlineKeyboardMarkup(keyboard)
 
 
+async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user = await db.get_user(query.from_user.id)
+    if not user:
+        return
+
+    if await db.is_game_finished():
+        await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
+        return
+
+    bet_id = int(query.data.split(":")[2])
+    refunded = await db.cancel_wager(user["id"], bet_id)
+    if refunded is None:
+        await query.answer("Vetoa ei voi peruuttaa — kohde ei ole enää auki.", show_alert=True)
+        return
+
+    await query.answer(f"Veto peruutettu, {refunded:.2f} € palautettu saldolle.")
+    user = await db.get_user(query.from_user.id)
+    text, keyboard = await _build_omat(user)
+    await query.message.edit_text(text, reply_markup=keyboard)
+
+
 async def _build_omat(user):
     wagers = await db.get_user_wagers_with_bets(user["id"])
     if not wagers:
-        return texts.NO_WAGERS
+        return texts.NO_WAGERS, back_keyboard()
 
     status_map = {"open": "avoinna", "locked": "lukittu", "resolved": "ratkaistu"}
     msg = texts.MY_WAGERS_HEADER
+    keyboard = []
     for w in wagers:
         side_fi = "kyllä" if w["side"] == "yes" else "ei"
         odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
@@ -501,7 +526,11 @@ async def _build_omat(user):
             amount=float(w["amount"]), odds=odds,
             status=status_map.get(w["status"], w["status"]),
         )
-    return msg
+        if w["status"] == "open":
+            label = f"🗑️ Peruuta #{w['bet_id']} {w['title'][:25]}"
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
+    keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])
+    return msg, InlineKeyboardMarkup(keyboard)
 
 
 async def _build_tulokset():

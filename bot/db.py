@@ -162,6 +162,30 @@ async def place_wager(user_id: int, bet_id: int, side: str, amount: float):
             return float(balance), existing is not None
 
 
+async def cancel_wager(user_id: int, bet_id: int):
+    """Cancel an open wager and refund the amount. Returns refunded amount or None if not cancellable."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            wager = await conn.fetchrow(
+                "SELECT w.amount FROM wagers w "
+                "JOIN bets b ON b.id = w.bet_id "
+                "WHERE w.user_id = $1 AND w.bet_id = $2 AND b.status = 'open'",
+                user_id, bet_id,
+            )
+            if not wager:
+                return None
+            await conn.execute(
+                "UPDATE users SET balance = balance + $1 WHERE id = $2",
+                wager["amount"], user_id,
+            )
+            await conn.execute(
+                "DELETE FROM wagers WHERE user_id = $1 AND bet_id = $2",
+                user_id, bet_id,
+            )
+            return float(wager["amount"])
+
+
 async def get_user_wagers_with_bets(user_id: int):
     pool = await get_pool()
     rows = await pool.fetch(

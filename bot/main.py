@@ -40,6 +40,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handlers.nav_callback, pattern=r"^nav:"))
     app.add_handler(CallbackQueryHandler(handlers.bet_side_callback, pattern=r"^bet:"))
     app.add_handler(CallbackQueryHandler(handlers.delete_bet_callback, pattern=r"^del:"))
+    app.add_handler(CallbackQueryHandler(handlers.cancel_wager_callback, pattern=r"^wager:cancel:"))
 
     # ForceReply / free-text input (must be last)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.text_message))
