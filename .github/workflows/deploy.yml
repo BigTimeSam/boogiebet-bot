@@ -100,7 +100,7 @@ jobs:
           docker exec -i "$TEST_DB" psql -U boogiebet -d boogiebet \
             < "$DEPLOY_PATH/init.sql"
 
-          pip install --break-system-packages -q -r "$DEPLOY_PATH/requirements-dev.txt"
+          python3 -m pip install --break-system-packages -q -r "$DEPLOY_PATH/requirements-dev.txt"
           DATABASE_URL="$TEST_URL" python3 -m pytest "$DEPLOY_PATH/tests/" -v
 
       - name: Docker build and deploy
