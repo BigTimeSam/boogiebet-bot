@@ -42,6 +42,10 @@ jobs:
             NEXT_TAG="v1.0.1"
           fi
           echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+          # Write APP_VERSION into server .env so the container picks it up on start.
+          touch "$DEPLOY_PATH/.env"
+          sed -i '/^APP_VERSION=/d' "$DEPLOY_PATH/.env"
+          echo "APP_VERSION=${NEXT_TAG}" >> "$DEPLOY_PATH/.env"
           echo "Next version: $NEXT_TAG"
 
       - name: Archive .env backup

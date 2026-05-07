@@ -1,3 +1,22 @@
+import os
+import functools
+
+_HEADER_TEMPLATE = (
+    "🎰 boogieBet {version} – Vedonlyöntikilpailu, jossa kilpailijat panostavat "
+    "1000 euroa eri kohteisiin ja selvitetään, kenellä on kilpailun päätteeksi eniten saldoa."
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _header() -> str:
+    version = os.environ.get("APP_VERSION", "v1.0.0")
+    return _HEADER_TEMPLATE.format(version=version)
+
+
+def H(text: str) -> str:
+    return _header() + "\n\n" + text
+
+
 WELCOME_NEW = (
     "🎰 Tervetuloa boogieBet-bottiin, {name}!\n\n"
     "Lähtösaldosi on 1 000,00 €.\n"
