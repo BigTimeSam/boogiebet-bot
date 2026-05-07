@@ -40,6 +40,13 @@ def _bet_type_keyboard():
 
 
 async def _main_text(user, name: str = None, is_new: bool = False) -> str:
+    if await db.is_game_finished():
+        leaderboard = await db.get_leaderboard()
+        total = len(leaderboard)
+        rank = next((i for i, r in enumerate(leaderboard, 1) if r["telegram_id"] == user["telegram_id"]), total)
+        return texts.GAME_FINISHED_PERSONAL.format(
+            balance=float(user["balance"]), rank=rank, total=total
+        )
     balance = float(user["balance"])
     if is_new and name:
         base = texts.WELCOME_NEW.format(name=name, balance=balance)
