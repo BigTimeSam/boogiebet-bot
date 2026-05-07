@@ -10,7 +10,7 @@ AWAITING_BET_TYPE = "awaiting_bet_type"
 AWAITING_BET_ODDS = "awaiting_bet_odds"
 AWAITING_WINNER_OPTIONS = "awaiting_winner_options"
 
-MIN_WAGER = 10.0
+MIN_WAGER = 20.0
 MAX_WAGER = 200.0
 
 
