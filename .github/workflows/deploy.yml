@@ -65,7 +65,7 @@ jobs:
           git reset --hard HEAD
           git clean -fd
 
-      - name: Git sync and Docker deploy
+      - name: Git sync
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -78,6 +78,35 @@ jobs:
           git checkout --force --detach "${{ github.sha }}"
           git reset --hard "${{ github.sha }}"
           git clean -fd
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          TEST_DB=boogiebet-test-$$
+          TEST_PORT=5433
+          TEST_URL="postgresql://boogiebet:boogiebet@localhost:${TEST_PORT}/boogiebet"
+
+          docker run -d --name "$TEST_DB" \
+            -e POSTGRES_DB=boogiebet \
+            -e POSTGRES_USER=boogiebet \
+            -e POSTGRES_PASSWORD=boogiebet \
+            -p "127.0.0.1:${TEST_PORT}:5432" \
+            postgres:16-alpine
+
+          cleanup() { docker rm -f "$TEST_DB" 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          until docker exec "$TEST_DB" pg_isready -U boogiebet -q; do sleep 1; done
+          docker exec -i "$TEST_DB" psql -U boogiebet -d boogiebet \
+            < "$DEPLOY_PATH/init.sql"
+
+          pip install --break-system-packages -q -r "$DEPLOY_PATH/requirements-dev.txt"
+          DATABASE_URL="$TEST_URL" python3 -m pytest "$DEPLOY_PATH/tests/" -v
+
+      - name: Docker build and deploy
+        run: |
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
           docker compose build bot
           docker compose up -d db bot
           docker image prune -f
