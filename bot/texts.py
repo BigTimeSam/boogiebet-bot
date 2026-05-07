@@ -85,7 +85,7 @@ BET_ALREADY_LOCKED = "Vetokohde on jo lukittu tai ratkaistu."
 
 INVALID_SIDE = "Valitse 'kyllä' tai 'ei'."
 
-INVALID_AMOUNT = "❌ Syötä positiivinen numero (esim. 50 tai 12,50)."
+INVALID_AMOUNT = "❌ Syötä kokonaisluku euroissa (esim. 50 tai 200)."
 
 INVALID_ODDS = "❌ Kertoimien täytyy olla lukuja suurempia kuin 1.0 (esim. 3.50 1.25)."
 

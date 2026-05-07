@@ -401,8 +401,9 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     try:
         amount = float(update.message.text.strip().replace(",", "."))
-        if amount <= 0:
+        if amount != int(amount) or amount <= 0:
             raise ValueError
+        amount = float(int(amount))
     except ValueError:
         await update.message.reply_text(texts.H(texts.INVALID_AMOUNT))
         return
@@ -574,12 +575,13 @@ async def _build_kohteet(user):
 
         if b["bet_type"] == "winner":
             options = await db.get_bet_options(b["id"])
+            my_label = next((o["label"] for o in options if w and w.get("option_id") == o["id"]), None)
+            prefix = "" if is_open else "🔒 "
+            title_text = f"🏆 #{b['id']} {prefix}{b['title']}"
+            if my_label:
+                title_text += f" (✅ Valintasi: {my_label} | Panos: {int(float(w['amount']))} €)"
+            keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
             if is_open and not game_done:
-                my_label = next((o["label"] for o in options if w and w.get("option_id") == o["id"]), None)
-                title_text = f"🏆 #{b['id']} {b['title']}"
-                if my_label:
-                    title_text += f"  ✅ {my_label} {float(w['amount']):.2f} €"
-                keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
                 keyboard.append([
                     InlineKeyboardButton(
                         f"{o['label']} @ {float(o['odds']):.2f}",
@@ -587,12 +589,6 @@ async def _build_kohteet(user):
                     )
                     for o in options[:4]
                 ])
-            else:
-                my_label = next((o["label"] for o in options if w and w.get("option_id") == o["id"]), None)
-                title_text = f"🔒 #{b['id']} {b['title']}"
-                if my_label:
-                    title_text += f"  ✅ {my_label} {float(w['amount']):.2f} €"
-                keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
         else:
             if is_open:
                 if w:
@@ -608,10 +604,11 @@ async def _build_kohteet(user):
                         yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
                     )
                 if not game_done:
-                    keyboard.append([InlineKeyboardButton(
-                        f"#{b['id']} {b['title']}",
-                        callback_data="nav:kohteet",
-                    )])
+                    side_fi = "kyllä" if w and w["side"] == "yes" else "ei" if w else None
+                    title_text = f"#{b['id']} {b['title']}"
+                    if w:
+                        title_text += f" (✅ Valintasi: {side_fi} | Panos: {int(float(w['amount']))} €)"
+                    keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
                     keyboard.append([
                         InlineKeyboardButton(f"✅ Kyllä {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
                         InlineKeyboardButton(f"❌ Ei {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
