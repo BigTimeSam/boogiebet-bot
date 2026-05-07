@@ -323,7 +323,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         msg = texts.GAME_FINISHED_HEADER
         for i, row in enumerate(rows, 1):
             name = row["username"] or f"user{row['telegram_id']}"
-            msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=float(row["balance"]))
+            msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=float(row["balance"]), potential=float(row["balance"]))
         msg += texts.GAME_FINISHED_NOTICE
         await query.message.edit_text(texts.H(msg))
 
@@ -347,6 +347,6 @@ async def _finish_game(update):
     msg = texts.GAME_FINISHED_HEADER
     for i, row in enumerate(rows, 1):
         name = row["username"] or f"user{row['telegram_id']}"
-        msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=float(row["balance"]))
+        msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=float(row["balance"]), potential=float(row["balance"]))
     msg += texts.GAME_FINISHED_NOTICE
     await update.message.reply_text(texts.H(msg))

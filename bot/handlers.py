@@ -679,11 +679,14 @@ async def _build_tulokset():
         return "Ei pelaajia vielä."
 
     game_done = await db.is_game_finished()
+    payouts = {} if game_done else await db.get_all_users_potential_winnings()
     header = texts.GAME_FINISHED_HEADER if game_done else texts.LEADERBOARD_HEADER
     msg = header
     for i, row in enumerate(rows, 1):
         name = row["username"] or f"user{row['telegram_id']}"
-        msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=float(row["balance"]))
+        balance = float(row["balance"])
+        potential = balance + payouts.get(row["telegram_id"], 0.0)
+        msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=balance, potential=potential)
     if game_done:
         msg += texts.GAME_FINISHED_NOTICE
     return msg

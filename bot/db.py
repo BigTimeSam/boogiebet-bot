@@ -325,6 +325,30 @@ async def get_leaderboard():
     return [dict(r) for r in rows]
 
 
+async def get_all_users_potential_winnings():
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT w.user_id, u.telegram_id, w.amount, w.side, b.yes_odds, b.no_odds, "
+        "b.bet_type, bo.odds AS option_odds "
+        "FROM wagers w "
+        "JOIN users u ON u.id = w.user_id "
+        "JOIN bets b ON b.id = w.bet_id "
+        "LEFT JOIN bet_options bo ON bo.id = w.option_id "
+        "WHERE b.status IN ('open', 'locked')"
+    )
+    payouts: dict[int, float] = {}
+    for r in rows:
+        tid = r["telegram_id"]
+        amount = float(r["amount"])
+        if r["bet_type"] == "winner":
+            payout = amount * float(r["option_odds"])
+        else:
+            odds = float(r["yes_odds"]) if r["side"] == "yes" else float(r["no_odds"])
+            payout = amount * odds
+        payouts[tid] = payouts.get(tid, 0.0) + payout
+    return payouts
+
+
 async def is_game_finished():
     pool = await get_pool()
     val = await pool.fetchval("SELECT value FROM settings WHERE key = 'game_finished'")

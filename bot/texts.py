@@ -100,7 +100,7 @@ WAGER_ROW = "#{bet_id} {title}\n🎯 {side} – {amount:.0f} € @ {odds:.2f} ({
 
 LEADERBOARD_HEADER = "🏆 Tulostaulu\n\n"
 
-LEADERBOARD_ROW = "{rank}. {username}: {balance:.2f} €\n"
+LEADERBOARD_ROW = "{rank}. {username}: {balance:.2f} € (maksimivoitto {potential:.0f} €)\n"
 
 GAME_FINISHED_HEADER = "🏆 Lopulliset tulokset\n\n"
 
