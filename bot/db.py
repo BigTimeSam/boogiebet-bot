@@ -357,6 +357,12 @@ async def get_all_users_potential_winnings():
     return payouts
 
 
+async def has_resolved_bets():
+    pool = await get_pool()
+    val = await pool.fetchval("SELECT EXISTS(SELECT 1 FROM bets WHERE status = 'resolved')")
+    return bool(val)
+
+
 async def is_game_finished():
     pool = await get_pool()
     val = await pool.fetchval("SELECT value FROM settings WHERE key = 'game_finished'")
