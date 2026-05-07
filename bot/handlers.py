@@ -602,12 +602,16 @@ async def _build_kohteet(user):
                 msg += "   · lukittu\n"
             msg += "\n"
             if is_open and not game_done:
+                keyboard.append([InlineKeyboardButton(
+                    f"🏆 #{b['id']} {b['title']}",
+                    callback_data="nav:kohteet",
+                )])
                 for o in options:
                     keyboard.append([InlineKeyboardButton(
                         f"{o['label']} @ {float(o['odds']):.2f}",
                         callback_data=f"opt:{b['id']}:{o['id']}",
                     )])
-                keyboard.append([InlineKeyboardButton("🗑️", callback_data=f"del:{b['id']}")])
+                keyboard.append([InlineKeyboardButton("🗑️ Poista kohde", callback_data=f"del:{b['id']}")])
         else:
             if is_open:
                 if w:
@@ -623,6 +627,10 @@ async def _build_kohteet(user):
                         yes_odds=float(b["yes_odds"]), no_odds=float(b["no_odds"]),
                     )
                 if not game_done:
+                    keyboard.append([InlineKeyboardButton(
+                        f"#{b['id']} {b['title']}",
+                        callback_data="nav:kohteet",
+                    )])
                     keyboard.append([
                         InlineKeyboardButton(f"✅ Kyllä {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
                         InlineKeyboardButton(f"❌ Ei {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
