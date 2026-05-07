@@ -119,23 +119,18 @@ async def lopeta(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(texts.H("Peli on jo päättynyt."))
         return
     pool_bets = await db.get_active_bets()
-    unresolved = [b for b in pool_bets if b["status"] == "locked"]
+    unresolved = [b for b in pool_bets if b["status"] in ("open", "locked")]
     if unresolved:
         titles = "\n".join(f"  #{b['id']} {b['title']}" for b in unresolved)
         await update.message.reply_text(texts.H(
-            f"⚠️ Ratkaisemattomia lukittuja kohteita:\n{titles}\n\n"
-            "Ratkaise ne ensin komennolla /ratkaise tai lähetä /lopeta uudelleen hyväksyäksesi."
+            f"❌ Ratkaisemattomia kohteita:\n{titles}\n\nRatkaise kaikki kohteet ennen pelin lopettamista."
         ))
-        ctx.user_data["lopeta_confirm"] = True
         return
     await _finish_game(update)
 
 
 async def lopeta_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not ctx.user_data.pop("lopeta_confirm", False):
-        await lopeta(update, ctx)
-        return
-    await _finish_game(update)
+    await lopeta(update, ctx)
 
 
 async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -318,19 +313,21 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.answer("Peli on jo päättynyt.", show_alert=True)
             return
         all_bets = await db.get_active_bets()
-        unresolved = [b for b in all_bets if b["status"] == "locked"]
+        unresolved = [b for b in all_bets if b["status"] in ("open", "locked")]
         if unresolved:
             titles = "\n".join(f"  #{b['id']} {b['title']}" for b in unresolved)
-            msg = f"⚠️ Ratkaisemattomia lukittuja kohteita:\n{titles}\n\nHaluatko silti lopettaa?"
-        else:
-            msg = texts.ADMIN_FINISH_CONFIRM
+            msg = f"❌ Ratkaisemattomia kohteita:\n{titles}\n\nRatkaise kaikki kohteet ennen pelin lopettamista."
+            await query.message.edit_text(texts.H(msg), reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")]
+            ]))
+            return
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✅ Kyllä, lopeta", callback_data="adm:finish_confirm"),
                 InlineKeyboardButton("❌ Peruuta", callback_data="adm:panel"),
             ]
         ])
-        await query.message.edit_text(texts.H(msg), reply_markup=keyboard)
+        await query.message.edit_text(texts.H(texts.ADMIN_FINISH_CONFIRM), reply_markup=keyboard)
 
     elif action == "finish_confirm":
         if await db.is_game_finished():
