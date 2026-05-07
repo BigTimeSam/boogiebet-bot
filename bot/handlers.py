@@ -274,10 +274,10 @@ async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
 
     user = await db.get_user(query.from_user.id)
     if not user:
+        await query.answer()
         await query.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
         return
     if await db.is_game_finished():
@@ -289,6 +289,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     bet = await db.get_bet(bet_id)
     if not bet:
+        await query.answer()
         await query.message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
         return
     if bet["status"] == "locked":
@@ -316,6 +317,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
+    await query.answer()
     ctx.user_data["state"] = AWAITING_AMOUNT
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": side}
 
@@ -331,10 +333,10 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
 
     user = await db.get_user(query.from_user.id)
     if not user:
+        await query.answer()
         await query.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
         return
     if await db.is_game_finished():
@@ -347,6 +349,7 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     bet = await db.get_bet(bet_id)
     if not bet:
+        await query.answer()
         await query.message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
         return
     if bet["status"] == "locked":
@@ -377,6 +380,7 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
+    await query.answer()
     ctx.user_data["state"] = AWAITING_AMOUNT
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id}
 
