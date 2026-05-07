@@ -542,7 +542,7 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         remaining = int(MAX_WAGER - existing_amount)
         await message.reply_text(texts.H(
             f"❌ Panosten maksimi on {int(MAX_WAGER)} € per kohde. "
-            f"Sinulla on jo {int(existing_amount)} € pantuna — voit lisätä enintään {remaining} €."
+            f"Sinulla on jo {int(existing_amount)} € panostettuna — voit lisätä enintään {remaining} €."
         ))
         return
 
