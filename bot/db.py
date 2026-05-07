@@ -140,6 +140,8 @@ async def delete_bet(bet_id: int):
                     "UPDATE users SET balance = balance + $1 WHERE id = $2",
                     w["amount"], w["user_id"],
                 )
+            await conn.execute("DELETE FROM wagers WHERE bet_id = $1", bet_id)
+            await conn.execute("DELETE FROM bet_options WHERE bet_id = $1", bet_id)
             result = await conn.execute(
                 "DELETE FROM bets WHERE id = $1 AND status = 'open'", bet_id
             )
