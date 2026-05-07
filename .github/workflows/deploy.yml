@@ -19,7 +19,7 @@ jobs:
       DEPLOY_PATH: /srv/boogiebet-bot
     steps:
       - name: Mark deploy path as safe for git
-        run: git config --global --add safe.directory "$DEPLOY_PATH"
+        run: sudo git config --system --add safe.directory "$DEPLOY_PATH"
 
       - name: Compute next version
         id: version
