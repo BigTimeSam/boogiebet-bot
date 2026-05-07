@@ -632,7 +632,7 @@ async def _build_kohteet(user):
             prefix = "" if is_open else "🔒 "
             title_text = f"{prefix}🏆 #{b['id']} {b['title']}"
             keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
-            if is_open and not game_done:
+            if not game_done:
                 keyboard.append([
                     InlineKeyboardButton(
                         f"{o['label']} @ {float(o['odds']):.2f}",
@@ -641,15 +641,13 @@ async def _build_kohteet(user):
                     for o in options[:4]
                 ])
         else:
-            if is_open:
-                if not game_done:
-                    keyboard.append([InlineKeyboardButton(f"⚖️ #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
-                    keyboard.append([
-                        InlineKeyboardButton(f"✅ Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
-                        InlineKeyboardButton(f"❌ Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
-                    ])
-            else:
-                keyboard.append([InlineKeyboardButton(f"🔒 ⚖️ #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
+            if not game_done:
+                lock_prefix = "" if is_open else "🔒 "
+                keyboard.append([InlineKeyboardButton(f"{lock_prefix}⚖️ #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
+                keyboard.append([
+                    InlineKeyboardButton(f"✅ Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
+                    InlineKeyboardButton(f"❌ Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
+                ])
 
     keyboard.append(bottom_row)
     return msg, InlineKeyboardMarkup(keyboard)
@@ -670,8 +668,9 @@ async def _build_omat(user):
         else:
             side_fi = "Kyllä" if w["side"] == "yes" else "Ei"
             odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
+        lock_prefix = "🔒 " if w["status"] == "locked" else ""
         msg += texts.WAGER_ROW.format(
-            bet_id=w["bet_id"], title=w["title"], side=side_fi,
+            bet_id=w["bet_id"], title=lock_prefix + w["title"], side=side_fi,
             amount=float(w["amount"]), odds=odds,
             status=status_map.get(w["status"], w["status"]),
         )
