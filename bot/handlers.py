@@ -658,24 +658,38 @@ async def _build_omat(user):
     if not wagers:
         return texts.NO_WAGERS, back_keyboard()
 
-    status_map = {"open": "avoinna", "locked": "lukittu", "resolved": "ratkaistu"}
     msg = texts.MY_WAGERS_HEADER
     keyboard = []
     for w in wagers:
         if w["bet_type"] == "winner":
             side_fi = w["option_label"] or "?"
             odds = float(w["option_odds"]) if w["option_odds"] else 0.0
+            won = w["status"] == "resolved" and str(w.get("result")) == str(w.get("option_id"))
         else:
             side_fi = "Kyllä" if w["side"] == "yes" else "Ei"
             odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
-        lock_prefix = "🔒 " if w["status"] == "locked" else ""
+            won = w["status"] == "resolved" and (
+                (w["side"] == "yes" and w.get("result") == "yes") or
+                (w["side"] == "no" and w.get("result") == "no")
+            )
+
+        amount = float(w["amount"])
+        if w["status"] == "open":
+            icon, extra = "🎯", " (avoinna)"
+        elif w["status"] == "locked":
+            icon, extra = "🔒", ""
+        elif won:
+            profit = amount * odds
+            icon, extra = "🏆", f" (+{profit:.0f} €)"
+        else:
+            icon, extra = "❌", f" (-{amount:.0f} €)"
+
         msg += texts.WAGER_ROW.format(
-            bet_id=w["bet_id"], title=lock_prefix + w["title"], side=side_fi,
-            amount=float(w["amount"]), odds=odds,
-            status=status_map.get(w["status"], w["status"]),
+            bet_id=w["bet_id"], title=w["title"], side=side_fi,
+            amount=amount, odds=odds, icon=icon, extra=extra,
         )
         if w["status"] == "open":
-            refund = float(w["amount"]) * 0.95
+            refund = amount * 0.95
             label = f"💸 Cashout #{w['bet_id']} (+{refund:.0f} €)"
             keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
     keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])
