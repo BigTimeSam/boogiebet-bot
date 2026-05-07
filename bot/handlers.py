@@ -268,7 +268,7 @@ async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data[AWAITING_WINNER_OPTIONS] = {"title": title}
         await query.message.reply_text(
             texts.H(texts.ASK_WINNER_OPTIONS.format(title=title)),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="Suomi @ 3.50"),
+            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. Osmo & Markulov @ 2.80 | Zyrk & Kipe @ 2.50 | Damu & Koala @ 3.00 | Johkis & Winkzi @ 2.75"),
         )
 
 
