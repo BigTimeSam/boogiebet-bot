@@ -35,7 +35,7 @@ def back_keyboard():
 
 def _bet_type_keyboard():
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Kyllä / Ei", callback_data="bet_type:simple"),
+        InlineKeyboardButton("⚖️ Kyllä / Ei", callback_data="bet_type:simple"),
         InlineKeyboardButton("🏆 Voittajaveto", callback_data="bet_type:winner"),
     ]])
 
