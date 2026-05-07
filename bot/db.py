@@ -215,3 +215,14 @@ async def is_game_finished():
 async def set_game_finished():
     pool = await get_pool()
     await pool.execute("UPDATE settings SET value = 'true' WHERE key = 'game_finished'")
+
+
+async def reset_game():
+    """Delete all bets and wagers, reset balances to 1000, clear game_finished. Admins are preserved."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM wagers")
+            await conn.execute("DELETE FROM bets")
+            await conn.execute("UPDATE users SET balance = 1000.00")
+            await conn.execute("UPDATE settings SET value = 'false' WHERE key = 'game_finished'")

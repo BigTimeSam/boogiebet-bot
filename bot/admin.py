@@ -19,6 +19,7 @@ def admin_panel_keyboard():
             InlineKeyboardButton("✅ Ratkaise kohde", callback_data="adm:resolve_list"),
             InlineKeyboardButton("🏁 Lopeta peli", callback_data="adm:finish"),
         ],
+        [InlineKeyboardButton("🔄 Resetoi kaikki", callback_data="adm:reset")],
         [InlineKeyboardButton("⬅️ Päävalikko", callback_data="nav:main")],
     ])
 
@@ -280,6 +281,19 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=float(row["balance"]))
         msg += texts.GAME_FINISHED_NOTICE
         await query.message.edit_text(msg)
+
+    elif action == "reset":
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Kyllä, nollaa", callback_data="adm:reset_confirm"),
+                InlineKeyboardButton("❌ Peruuta", callback_data="adm:panel"),
+            ]
+        ])
+        await query.message.edit_text(texts.ADMIN_RESET_CONFIRM, reply_markup=keyboard)
+
+    elif action == "reset_confirm":
+        await db.reset_game()
+        await query.message.edit_text(texts.ADMIN_RESET_DONE, reply_markup=admin_panel_keyboard())
 
 
 async def _finish_game(update):

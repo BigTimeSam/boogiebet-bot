@@ -146,3 +146,11 @@ ADMIN_FINISH_CONFIRM = "⚠️ Haluatko varmasti lopettaa pelin?\n\nTätä ei vo
 ADMIN_NO_OPEN_BETS = "Ei avoimia kohteita lukittavaksi."
 
 ADMIN_NO_LOCKED_BETS = "Ei lukittuja kohteita ratkaistaksi."
+
+ADMIN_RESET_CONFIRM = (
+    "⚠️ Haluatko varmasti nollata pelin?\n\n"
+    "Tämä poistaa kaikki vetokohteet ja vedot sekä palauttaa kaikkien saldot 1 000 €:oon. "
+    "Adminit säilyvät. Toimintoa ei voi peruuttaa."
+)
+
+ADMIN_RESET_DONE = "✅ Peli nollattu! Kaikki vedot poistettu ja saldot palautettu 1 000 €:oon."
