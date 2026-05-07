@@ -411,7 +411,7 @@ async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.answer("Vetoa ei voi peruuttaa — kohde ei ole enää auki.", show_alert=True)
         return
 
-    await query.answer(f"Cashout! {refunded:.2f} € palautettu saldolle (5% maksu pidätetty).")
+    await query.answer(f"Cashout! {refunded.0f} € palautettu saldolle (5% maksu pidätetty).")
     user = await db.get_user(query.from_user.id)
     text, keyboard = await _build_my_bets(user)
     await query.message.edit_text(texts.H(text), reply_markup=keyboard)

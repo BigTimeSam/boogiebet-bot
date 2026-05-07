@@ -20,13 +20,13 @@ def H(text: str) -> str:
     return _header() + "\n\n" + text
 
 
-WELCOME_NEW = "Tervetuloa, {name}!\n\nSaldo: {balance:.2f} €"
+WELCOME_NEW = "Tervetuloa, {name}!\n\nSaldo: {balance.0f} €"
 
-WELCOME_BACK = "Saldo: {balance:.2f} €"
+WELCOME_BACK = "Saldo: {balance.0f} €"
 
-WAGER_STATS = "Avoimissa vedoissa: {wagered:.2f} €. Jos kaikki vetosi osuvat, voit voittaa {potential:.2f} €."
+WAGER_STATS = "Avoimissa vedoissa: {wagered.0f} €. Jos kaikki vetosi osuvat, voit voittaa {potential.0f} €."
 
-BALANCE = "💰 Saldosi: {balance:.2f} €"
+BALANCE = "💰 Saldosi: {balance.0f} €"
 
 NO_BETS = "Ei vetokohteita vielä. Tee valitus orgalle."
 
@@ -34,11 +34,11 @@ BET_LIST_HEADER = "📋 Vetokohteet\n\n"
 
 BET_ROW_OPEN = "#{id} {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n\n"
 
-BET_ROW_OPEN_WITH_WAGER = "#{id} {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n   ✅ Vetosi: {side} {amount:.2f} €\n\n"
+BET_ROW_OPEN_WITH_WAGER = "#{id} {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n   ✅ Vetosi: {side} {amount.0f} €\n\n"
 
 BET_ROW_LOCKED = "#{id} 🔒 {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}  · lukittu\n\n"
 
-BET_ROW_LOCKED_WITH_WAGER = "#{id} 🔒 {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n   ✅ Vetosi: {side} {amount:.2f} €  · lukittu\n\n"
+BET_ROW_LOCKED_WITH_WAGER = "#{id} 🔒 {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n   ✅ Vetosi: {side} {amount.0f} €  · lukittu\n\n"
 
 ASK_BET_TITLE = (
     "Uusi vetokohde — vaihe 1/2\n\n"
@@ -56,15 +56,15 @@ ASK_BET_ODDS = (
 ASK_AMOUNT = (
     "#{bet_id} {title}\n"
     "Valitsit: {side} @ {odds:.2f}\n"
-    "Saldosi: {balance:.2f} €{existing}\n\n"
+    "Saldosi: {balance.0f} €{existing}\n\n"
     "Syötä vetosumma euroissa ({min:.0f}–{max:.0f} €):"
 )
 
-WAGER_PLACED = "✅ Veto lyöty!\n#{bet_id} {side} – {amount:.2f} € @ {odds:.2f}\nVoi voittaa: {payout:.2f} €\n\nSaldosi nyt: {balance:.2f} €"
+WAGER_PLACED = "✅ Veto lyöty!\n#{bet_id} {side} – {amount.0f} € @ {odds:.2f}\nVoi voittaa: {payout.0f} €\n\nSaldosi nyt: {balance.0f} €"
 
-WAGER_UPDATED = "🔄 Veto päivitetty!\n#{bet_id} {side} – {amount:.2f} € @ {odds:.2f}\nVoi voittaa: {payout:.2f} €\n\nSaldosi nyt: {balance:.2f} €"
+WAGER_UPDATED = "🔄 Veto päivitetty!\n#{bet_id} {side} – {amount.0f} € @ {odds:.2f}\nVoi voittaa: {payout.0f} €\n\nSaldosi nyt: {balance.0f} €"
 
-NOT_ENOUGH_BALANCE = "❌ Ei tarpeeksi saldoa! Saldosi: {balance:.2f} €"
+NOT_ENOUGH_BALANCE = "❌ Ei tarpeeksi saldoa! Saldosi: {balance.0f} €"
 
 MAX_WAGER_EXCEEDED = "❌ Vetosumman täytyy olla {min:.0f}–{max:.0f} €."
 
@@ -100,11 +100,11 @@ WAGER_ROW = "#{bet_id} {title}\n{icon} {side} – {amount:.0f} € @ {odds:.2f}{
 
 LEADERBOARD_HEADER = "🏆 Tulostaulu\n\n"
 
-LEADERBOARD_ROW = "{rank}. {username}: {balance:.2f} € (maksimivoitto {potential:.0f} €)\n"
+LEADERBOARD_ROW = "{rank}. {username}: {balance.0f} € (maksimivoitto {potential:.0f} €)\n"
 
 GAME_FINISHED_HEADER = "🏆 Lopulliset tulokset\n\n"
 
-GAME_FINISHED_ROW = "{rank}. {username}: {balance:.2f} €\n"
+GAME_FINISHED_ROW = "{rank}. {username}: {balance.0f} €\n"
 
 GAME_FINISHED_NOTICE = "\n🔒 Peli on päättynyt."
 
@@ -137,7 +137,7 @@ BET_RESOLVED_MSG = (
 
 NO_WINNERS = "  Ei voittajia tässä kohteessa."
 
-WINNER_ROW = "🏆 {username}: +{profit:.2f} €\n"
+WINNER_ROW = "🏆 {username}: +{profit.0f} €\n"
 
 NOT_ADMIN = "❌ Tämä komento on vain admineille."
 
