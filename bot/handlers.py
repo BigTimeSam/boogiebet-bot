@@ -21,7 +21,6 @@ def main_menu_keyboard(is_admin=False):
         ],
         [
             InlineKeyboardButton("🏆 Tulostaulu", callback_data="nav:tulokset"),
-            InlineKeyboardButton("💰 Saldo", callback_data="nav:saldo"),
         ],
     ]
     if is_admin:
