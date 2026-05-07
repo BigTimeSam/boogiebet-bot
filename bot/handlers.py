@@ -14,15 +14,14 @@ MIN_WAGER = 20.0
 MAX_WAGER = 200.0
 
 
-def main_menu_keyboard(is_admin=False):
+def main_menu_keyboard(is_admin=False, game_done=False):
+    top_row = []
+    if not game_done:
+        top_row.append(InlineKeyboardButton("📋 Kohteet", callback_data="nav:kohteet"))
+    top_row.append(InlineKeyboardButton("🎯 Omat vedot", callback_data="nav:omat"))
     rows = [
-        [
-            InlineKeyboardButton("📋 Kohteet", callback_data="nav:kohteet"),
-            InlineKeyboardButton("🎯 Omat vedot", callback_data="nav:omat"),
-        ],
-        [
-            InlineKeyboardButton("🏆 Tulostaulu", callback_data="nav:tulokset"),
-        ],
+        top_row,
+        [InlineKeyboardButton("🏆 Tulostaulu", callback_data="nav:tulokset")],
     ]
     if is_admin:
         rows.append([InlineKeyboardButton("🔧 Admin-paneeli", callback_data="adm:panel")])
@@ -57,7 +56,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user, created = await db.get_or_create_user(tg.id, tg.username or tg.first_name)
     await update.message.reply_text(
         texts.H(await _main_text(user, name=tg.first_name, is_new=created)),
-        reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
+        reply_markup=main_menu_keyboard(is_admin=user["is_admin"], game_done=await db.is_game_finished()),
     )
 
 
@@ -66,7 +65,7 @@ async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     is_admin = user["is_admin"] if user else False
     await update.message.reply_text(
         texts.H(texts.HELP_TEXT),
-        reply_markup=main_menu_keyboard(is_admin=is_admin),
+        reply_markup=main_menu_keyboard(is_admin=is_admin, game_done=await db.is_game_finished()),
     )
 
 
@@ -216,7 +215,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if action == "main":
         await query.message.edit_text(
             texts.H(await _main_text(user)),
-            reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
+            reply_markup=main_menu_keyboard(is_admin=user["is_admin"], game_done=await db.is_game_finished()),
         )
     elif action == "saldo":
         await query.message.edit_text(
@@ -509,7 +508,7 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             id=bet["id"], title=bet["title"],
             yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
         )),
-        reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
+        reply_markup=main_menu_keyboard(is_admin=user["is_admin"], game_done=await db.is_game_finished()),
     )
 
 
@@ -546,7 +545,7 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     options_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in bet["options"])
     await update.message.reply_text(
         texts.H(texts.WINNER_BET_CREATED.format(id=bet["id"], title=bet["title"], options=options_text)),
-        reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
+        reply_markup=main_menu_keyboard(is_admin=user["is_admin"], game_done=await db.is_game_finished()),
     )
 
 
@@ -601,7 +600,7 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
     template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
     await message.reply_text(
         texts.H(template.format(bet_id=bet_id, side=side_fi, amount=new_total, odds=odds, payout=payout, balance=new_balance)),
-        reply_markup=main_menu_keyboard(is_admin=is_admin),
+        reply_markup=main_menu_keyboard(is_admin=is_admin, game_done=await db.is_game_finished()),
     )
     return False
 
