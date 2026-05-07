@@ -2,11 +2,9 @@ import os
 import functools
 
 _HEADER_TEMPLATE = (
-    "🎰 boogieBet {version} – On aika selvittää, kuka tietää ja kuka ei "
-    "(vaikka proffahan sen tietää). Sinulla on 1000 €, jotka tulee panostaa eri kohteisiin. "
-    "Minimipanos on 20 € ja maksimipanos 200 € per kohde. Kaikkia rahoja ei ole pakko panostaa, "
-    "ja voit vaihtaa mielipidettäsi, mutta jo lyödyn vedon cashout palauttaa vain 95 % rahoista "
-    "takaisin saldoon. Onnea matkaan! 🍀"
+    "🎰 boogieBet {version} – On aika selvittää, kuka tietää ja kuka ei (vaikka proffahan sen tietää).\n"
+    "Sinulla on käytössäsi 1000 €, jotka tulee panostaa eri kohteisiin. Minimipanos on 20 € ja maksimipanos 200 € per kohde.\n"
+    "Kaikkia rahoja ei ole pakko panostaa, ja voit vaihtaa mielipidettäsi, mutta jo lyödyn vedon cashout palauttaa vain 95 % rahoista takaisin saldoon. Onnea matkaan! 🍀"
 )
 
 
