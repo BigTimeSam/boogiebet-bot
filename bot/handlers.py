@@ -433,18 +433,26 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             raise ValueError
         amount = float(int(amount))
     except ValueError:
-        await update.message.reply_text(texts.H(texts.INVALID_AMOUNT))
+        await update.message.reply_text(
+            texts.H(texts.INVALID_AMOUNT),
+            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
+        )
         return
-
-    ctx.user_data.pop("state", None)
-    ctx.user_data.pop(AWAITING_AMOUNT, None)
 
     user = await db.get_user(update.effective_user.id)
     option_id = pending.get("option_id")
-    await _process_wager(
+    retryable = await _process_wager(
         update.message, user, pending["bet_id"], pending["side"], amount,
         is_admin=user["is_admin"], option_id=option_id,
     )
+    if retryable:
+        await update.message.reply_text(
+            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
+            text=texts.H(f"Syötä vetosumma euroissa ({int(MIN_WAGER)}–{int(MAX_WAGER)} €):"),
+        )
+    else:
+        ctx.user_data.pop("state", None)
+        ctx.user_data.pop(AWAITING_AMOUNT, None)
 
 
 async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -536,20 +544,21 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
 async def _process_wager(message, user, bet_id: int, side: str, amount: float,
                          is_admin=False, option_id: int = None):
+    """Returns True if a retryable validation error occurred, False otherwise."""
     bet = await db.get_bet(bet_id)
     if not bet:
         await message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
-        return
+        return False
     if bet["status"] == "locked":
         await message.reply_text(texts.H(texts.BET_LOCKED.format(id=bet_id)))
-        return
+        return False
     if bet["status"] == "resolved":
         await message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
-        return
+        return False
 
     if amount < MIN_WAGER:
         await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)))
-        return
+        return True
 
     existing = await db.get_user_wager(user["id"], bet_id)
     existing_amount = float(existing["amount"]) if existing else 0.0
@@ -561,11 +570,11 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
             f"❌ Panosten maksimi on {int(MAX_WAGER)} € per kohde. "
             f"Sinulla on jo {int(existing_amount)} € panostettuna — voit lisätä enintään {remaining} €."
         ))
-        return
+        return True
 
     if amount > float(user["balance"]):
         await message.reply_text(texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))))
-        return
+        return True
 
     new_balance, updated = await db.place_wager(user["id"], bet_id, side, new_total, option_id=option_id)
 
@@ -584,6 +593,7 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         texts.H(template.format(bet_id=bet_id, side=side_fi, amount=new_total, odds=odds, payout=payout, balance=new_balance)),
         reply_markup=main_menu_keyboard(is_admin=is_admin),
     )
+    return False
 
 
 async def _build_kohteet(user):
