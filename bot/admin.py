@@ -225,7 +225,17 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             await db.lock_bet(bet_id)
             await query.answer(f"🔒 Kohde #{bet_id} lukittu!")
-        await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
+        all_bets = await db.get_active_bets()
+        toggleable = [b for b in all_bets if b["status"] in ("open", "locked")]
+        keyboard = [
+            [InlineKeyboardButton(
+                f"{'🔒 ' if b['status'] == 'locked' else ''}#{b['id']} {b['title']}",
+                callback_data=f"adm:lock:{b['id']}",
+            )]
+            for b in toggleable
+        ]
+        keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
+        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif action == "resolve_list":
         all_bets = await db.get_active_bets()
