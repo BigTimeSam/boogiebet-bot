@@ -317,8 +317,7 @@ async def reset_game():
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute("DELETE FROM wagers")
-            await conn.execute("DELETE FROM bet_options")
-            await conn.execute("DELETE FROM bets")
-            await conn.execute("DELETE FROM users")
+            await conn.execute(
+                "TRUNCATE TABLE wagers, bet_options, bets, users RESTART IDENTITY CASCADE"
+            )
             await conn.execute("UPDATE settings SET value = 'false' WHERE key = 'game_finished'")
