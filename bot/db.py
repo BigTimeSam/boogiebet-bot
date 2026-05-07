@@ -156,6 +156,14 @@ async def lock_bet(bet_id: int):
     return result == "UPDATE 1"
 
 
+async def unlock_bet(bet_id: int):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE bets SET status = 'open' WHERE id = $1 AND status = 'locked'", bet_id
+    )
+    return result == "UPDATE 1"
+
+
 async def resolve_bet(bet_id: int, result: str):
     pool = await get_pool()
     async with pool.acquire() as conn:

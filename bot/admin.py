@@ -16,7 +16,7 @@ def admin_panel_keyboard():
             InlineKeyboardButton("🗑️ Poista kohde", callback_data="adm:delete_list"),
         ],
         [
-            InlineKeyboardButton("🔒 Lukitse kohde", callback_data="adm:lock_list"),
+            InlineKeyboardButton("🔒 Lukitse/vapauta kohde", callback_data="adm:lock_list"),
             InlineKeyboardButton("✅ Ratkaise kohde", callback_data="adm:resolve_list"),
         ],
         [
@@ -195,13 +195,17 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
 
     elif action == "lock_list":
-        bets = await db.get_open_bets()
-        if not bets:
+        all_bets = await db.get_active_bets()
+        toggleable = [b for b in all_bets if b["status"] in ("open", "locked")]
+        if not toggleable:
             await query.message.edit_text(texts.H(texts.ADMIN_NO_OPEN_BETS), reply_markup=admin_panel_keyboard())
             return
         keyboard = [
-            [InlineKeyboardButton(f"#{b['id']} {b['title']}", callback_data=f"adm:lock:{b['id']}")]
-            for b in bets
+            [InlineKeyboardButton(
+                f"{'🔒 ' if b['status'] == 'locked' else ''}#{b['id']} {b['title']}",
+                callback_data=f"adm:lock:{b['id']}",
+            )]
+            for b in toggleable
         ]
         keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
         await query.message.edit_text(texts.H(texts.ADMIN_LOCK_LIST), reply_markup=InlineKeyboardMarkup(keyboard))
@@ -212,11 +216,15 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not bet:
             await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
             return
-        if bet["status"] != "open":
-            await query.answer(texts.BET_ALREADY_LOCKED, show_alert=True)
+        if bet["status"] == "resolved":
+            await query.answer(texts.BET_RESOLVED.format(id=bet_id), show_alert=True)
             return
-        await db.lock_bet(bet_id)
-        await query.answer(f"🔒 Kohde #{bet_id} lukittu!")
+        if bet["status"] == "locked":
+            await db.unlock_bet(bet_id)
+            await query.answer(f"🔓 Kohde #{bet_id} vapautettu!")
+        else:
+            await db.lock_bet(bet_id)
+            await query.answer(f"🔒 Kohde #{bet_id} lukittu!")
         await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
 
     elif action == "resolve_list":
