@@ -9,7 +9,12 @@ def _password():
     return os.environ.get("ADMIN_PASSWORD", "")
 
 
-def admin_panel_keyboard():
+def admin_panel_keyboard(game_finished: bool = False):
+    if game_finished:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Resetoi kaikki", callback_data="adm:reset")],
+            [InlineKeyboardButton("⬅️ Päävalikko", callback_data="nav:main")],
+        ])
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Uusi kohde", callback_data="nav:new_bet"),
@@ -39,7 +44,8 @@ async def register(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(texts.H(texts.WRONG_PASSWORD))
         return
     await db.set_admin(update.effective_user.id)
-    await update.message.reply_text(texts.H(texts.ADMIN_WELCOME), reply_markup=admin_panel_keyboard())
+    game_done = await db.is_game_finished()
+    await update.message.reply_text(texts.H(texts.ADMIN_WELCOME), reply_markup=admin_panel_keyboard(game_done))
 
 
 async def admin_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -47,7 +53,8 @@ async def admin_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not user or not user["is_admin"]:
         await update.message.reply_text(texts.H(texts.NOT_ADMIN))
         return
-    await update.message.reply_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
+    game_done = await db.is_game_finished()
+    await update.message.reply_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard(game_done))
 
 
 async def cmd_lock(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -146,7 +153,8 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     action = parts[1]
 
     if action == "panel":
-        await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
+        game_done = await db.is_game_finished()
+        await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard(game_done))
 
     elif action == "delete_list":
         bets = await db.get_open_bets()
@@ -187,7 +195,8 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.answer(f"🗑️ Kohde #{bet_id} poistettu.")
         else:
             await query.answer(texts.BET_DELETE_FORBIDDEN, show_alert=True)
-        await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
+        game_done = await db.is_game_finished()
+        await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard(game_done))
 
     elif action == "lock_list":
         all_bets = await db.get_active_bets()
