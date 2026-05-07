@@ -685,7 +685,8 @@ async def _build_omat(user):
             status=status_map.get(w["status"], w["status"]),
         )
         if w["status"] == "open":
-            label = f"💸 Cashout (-5%) #{w['bet_id']} {w['title'][:20]}"
+            refund = float(w["amount"]) * 0.95
+            label = f"💸 Cashout #{w['bet_id']} (+{refund:.0f} €)"
             keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
     keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])
     return msg, InlineKeyboardMarkup(keyboard)

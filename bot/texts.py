@@ -96,7 +96,7 @@ NO_WAGERS = "Sinulla ei ole aktiivisia vetoja."
 
 MY_WAGERS_HEADER = "🎯 Omat vetosi\n\n"
 
-WAGER_ROW = "#{bet_id} {title}\n   {side} {amount:.2f} € @ {odds:.2f} · {status}\n\n"
+WAGER_ROW = "#{bet_id} {title}\n🎯 {side} {amount:.0f} € @ {odds:.2f} ({status})\n\n"
 
 LEADERBOARD_HEADER = "🏆 Tulostaulu\n\n"
 
