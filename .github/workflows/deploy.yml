@@ -82,26 +82,34 @@ jobs:
       - name: Run tests
         run: |
           set -euo pipefail
-          TEST_DB=boogiebet-test-$$
-          TEST_PORT=5433
-          TEST_URL="postgresql://boogiebet:boogiebet@localhost:${TEST_PORT}/boogiebet"
+          TEST_NET=boogiebet-testnet-$$
+          TEST_DB=boogiebet-testdb-$$
 
-          docker run -d --name "$TEST_DB" \
+          docker network create "$TEST_NET"
+
+          docker run -d --name "$TEST_DB" --network "$TEST_NET" \
             -e POSTGRES_DB=boogiebet \
             -e POSTGRES_USER=boogiebet \
             -e POSTGRES_PASSWORD=boogiebet \
-            -p "127.0.0.1:${TEST_PORT}:5432" \
             postgres:16-alpine
 
-          cleanup() { docker rm -f "$TEST_DB" 2>/dev/null || true; }
+          cleanup() {
+            docker rm -f "$TEST_DB" 2>/dev/null || true
+            docker network rm "$TEST_NET" 2>/dev/null || true
+          }
           trap cleanup EXIT
 
           until docker exec "$TEST_DB" pg_isready -U boogiebet -q; do sleep 1; done
           docker exec -i "$TEST_DB" psql -U boogiebet -d boogiebet \
             < "$DEPLOY_PATH/init.sql"
 
-          python3 -m pip install --break-system-packages -q -r "$DEPLOY_PATH/requirements-dev.txt"
-          DATABASE_URL="$TEST_URL" python3 -m pytest "$DEPLOY_PATH/tests/" -v
+          docker run --rm \
+            --network "$TEST_NET" \
+            -e DATABASE_URL="postgresql://boogiebet:boogiebet@${TEST_DB}/boogiebet" \
+            -v "$DEPLOY_PATH:/app" \
+            -w /app \
+            python:3.12-slim \
+            sh -c "pip install -q -r requirements-dev.txt && python3 -m pytest tests/ -v"
 
       - name: Docker build and deploy
         run: |
