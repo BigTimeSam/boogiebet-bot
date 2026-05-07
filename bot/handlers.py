@@ -285,10 +285,16 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     side_fi = "kyllä" if side == "yes" else "ei"
 
     existing = await db.get_user_wager(user["id"], bet_id)
-    existing_info = ""
-    if existing:
-        ex_side = "kyllä" if existing["side"] == "yes" else "ei"
-        existing_info = f"\n(Nykyinen vetosi: {ex_side} {float(existing['amount']):.2f} €)"
+    if existing and existing["side"] != side:
+        await query.answer(
+            "Sinulla on jo veto eri puolelle. Tee cashout ensin Omat vedot -sivulla.",
+            show_alert=True,
+        )
+        return
+
+    existing_amount = int(float(existing["amount"])) if existing else 0
+    remaining = int(MAX_WAGER) - existing_amount
+    existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
     ctx.user_data["state"] = AWAITING_AMOUNT
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": side}
@@ -337,11 +343,16 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     existing = await db.get_user_wager(user["id"], bet_id)
-    existing_info = ""
-    if existing:
-        ex_opt = next((o for o in options if o["id"] == existing.get("option_id")), None)
-        if ex_opt:
-            existing_info = f"\n(Nykyinen vetosi: {ex_opt['label']} {float(existing['amount']):.2f} €)"
+    if existing and existing.get("option_id") != option_id:
+        await query.answer(
+            "Sinulla on jo veto eri vaihtoehtoon. Tee cashout ensin Omat vedot -sivulla.",
+            show_alert=True,
+        )
+        return
+
+    existing_amount = int(float(existing["amount"])) if existing else 0
+    remaining = int(MAX_WAGER) - existing_amount
+    existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
     ctx.user_data["state"] = AWAITING_AMOUNT
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id}
@@ -522,19 +533,24 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
     if amount < MIN_WAGER:
         await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)))
         return
-    if amount > MAX_WAGER:
-        await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)))
-        return
 
     existing = await db.get_user_wager(user["id"], bet_id)
-    refund = float(existing["amount"]) if existing else 0.0
-    available = float(user["balance"]) + refund
+    existing_amount = float(existing["amount"]) if existing else 0.0
+    new_total = existing_amount + amount
 
-    if amount > available:
+    if new_total > MAX_WAGER:
+        remaining = int(MAX_WAGER - existing_amount)
+        await message.reply_text(texts.H(
+            f"❌ Panosten maksimi on {int(MAX_WAGER)} € per kohde. "
+            f"Sinulla on jo {int(existing_amount)} € pantuna — voit lisätä enintään {remaining} €."
+        ))
+        return
+
+    if amount > float(user["balance"]):
         await message.reply_text(texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))))
         return
 
-    new_balance, updated = await db.place_wager(user["id"], bet_id, side, amount, option_id=option_id)
+    new_balance, updated = await db.place_wager(user["id"], bet_id, side, new_total, option_id=option_id)
 
     if option_id is not None:
         options = await db.get_bet_options(bet_id)
@@ -545,10 +561,10 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         odds = float(bet["yes_odds"]) if side == "yes" else float(bet["no_odds"])
         side_fi = "kyllä" if side == "yes" else "ei"
 
-    payout = amount * odds
+    payout = new_total * odds
     template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
     await message.reply_text(
-        texts.H(template.format(bet_id=bet_id, side=side_fi, amount=amount, odds=odds, payout=payout, balance=new_balance)),
+        texts.H(template.format(bet_id=bet_id, side=side_fi, amount=new_total, odds=odds, payout=payout, balance=new_balance)),
         reply_markup=main_menu_keyboard(is_admin=is_admin),
     )
 
