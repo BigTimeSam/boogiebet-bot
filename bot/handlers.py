@@ -184,6 +184,10 @@ async def poistakohde(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Callback handlers ──────────────────────────────────────────────────────────
 
+async def noop_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+
+
 async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -579,7 +583,7 @@ async def _build_kohteet(user):
             if is_open and not game_done:
                 keyboard.append([InlineKeyboardButton(
                     f"🏆 #{b['id']} {b['title']}",
-                    callback_data="nav:kohteet",
+                    callback_data=f"noop:{b['id']}",
                 )])
                 for o in options:
                     keyboard.append([InlineKeyboardButton(
