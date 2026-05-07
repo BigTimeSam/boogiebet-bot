@@ -525,7 +525,7 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
     user = await db.get_user(update.effective_user.id)
     bet = await db.create_winner_bet(title, options, user["id"])
-    options_text = "".join(f"  {o['label']} @ {float(o['odds']):.2f}\n" for o in bet["options"])
+    options_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in bet["options"])
     await update.message.reply_text(
         texts.H(texts.WINNER_BET_CREATED.format(id=bet["id"], title=bet["title"], options=options_text)),
         reply_markup=main_menu_keyboard(is_admin=user["is_admin"]),
