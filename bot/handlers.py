@@ -10,6 +10,7 @@ AWAITING_BET_TYPE = "awaiting_bet_type"
 AWAITING_BET_ODDS = "awaiting_bet_odds"
 AWAITING_WINNER_OPTIONS = "awaiting_winner_options"
 
+MIN_WAGER = 1.0
 MAX_WAGER = 200.0
 
 
@@ -296,6 +297,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=side_fi, odds=odds,
             balance=float(user["balance"]), existing=existing_info,
+            min=MIN_WAGER, max=MAX_WAGER,
         )),
         reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
     )
@@ -348,7 +350,7 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=option["label"],
             odds=float(option["odds"]), balance=float(user["balance"]),
-            existing=existing_info,
+            existing=existing_info, min=MIN_WAGER, max=MAX_WAGER,
         )),
         reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
     )
@@ -516,8 +518,11 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         await message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
         return
 
+    if amount < MIN_WAGER:
+        await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)))
+        return
     if amount > MAX_WAGER:
-        await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(max=MAX_WAGER)))
+        await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)))
         return
 
     existing = await db.get_user_wager(user["id"], bet_id)

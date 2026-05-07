@@ -56,7 +56,7 @@ ASK_AMOUNT = (
     "#{bet_id} {title}\n"
     "Valitsit: {side} @ {odds:.2f}\n"
     "Saldosi: {balance:.2f} €{existing}\n\n"
-    "Syötä vetosumma euroissa:"
+    "Syötä vetosumma euroissa ({min:.0f}–{max:.0f} €):"
 )
 
 WAGER_PLACED = "✅ Veto tehty!\n#{bet_id} {side} {amount:.2f} € @ {odds:.2f}\nVoitat: {payout:.2f} €\n\nSaldosi nyt: {balance:.2f} €"
@@ -65,7 +65,7 @@ WAGER_UPDATED = "🔄 Veto päivitetty!\n#{bet_id} {side} {amount:.2f} € @ {od
 
 NOT_ENOUGH_BALANCE = "❌ Ei tarpeeksi saldoa! Saldosi: {balance:.2f} €"
 
-MAX_WAGER_EXCEEDED = "❌ Maksimiveto per kohde on {max:.0f} €."
+MAX_WAGER_EXCEEDED = "❌ Vetosumman täytyy olla {min:.0f}–{max:.0f} €."
 
 BET_CREATED = "✅ Vetokohde luotu!\n\n#{id}: {title}\nKyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}"
 
