@@ -153,14 +153,14 @@ ASK_WINNER_OPTIONS = (
     "Syötä vaihtoehdot putkimerkillä erotettuna muodossa:\n"
     "Nimi @ kerroin | Nimi @ kerroin | ...\n\n"
     "esim.\n"
-    "Suomi @ 3.50 | Ruotsi @ 2.00 | Saksa @ 4.50"
+    "Osmo & Markulov @ 2.80 | Zyrk & Kipe @ 2.50 | Damu & Koala @ 3.00 | Johkis & Winkzi @ 2.75"
 )
 
 INVALID_WINNER_OPTIONS = (
     "❌ Tarkista muoto. Vähintään 2 vaihtoehtoa putkella erotettuna:\n"
     "Nimi @ kerroin | Nimi @ kerroin  (kerroin > 1.0)\n\n"
     "esim.\n"
-    "Suomi @ 3.50 | Ruotsi @ 2.00 | Saksa @ 4.50"
+    "Osmo & Markulov @ 2.80 | Zyrk & Kipe @ 2.50 | Damu & Koala @ 3.00 | Johkis & Winkzi @ 2.75"
 )
 
 WINNER_BET_CREATED = "✅ Voittajaveto luotu!\n\n#{id}: {title}\n\n{options}"
