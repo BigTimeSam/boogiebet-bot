@@ -666,8 +666,8 @@ async def _build_bets(user):
                 my_side = w["side"] if w else None
                 keyboard.append([InlineKeyboardButton(f"{lock_prefix}⚖️ #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
                 keyboard.append([
-                    InlineKeyboardButton(f"{'📍 ' if my_side == 'yes' else ''}✅ Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
-                    InlineKeyboardButton(f"{'📍 ' if my_side == 'no' else ''}❌ Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
+                    InlineKeyboardButton(f"{'📍 ' if my_side == 'yes' else ''}Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
+                    InlineKeyboardButton(f"{'📍 ' if my_side == 'no' else ''}Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
                 ])
 
     keyboard.append(bottom_row)
