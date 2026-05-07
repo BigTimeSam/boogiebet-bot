@@ -181,9 +181,7 @@ WINNERS_HEADER = "🏆 Voittajat\n\n"
 
 WINNERS_BET_SECTION = "#{id} {title}\n"
 
-WINNERS_PLAYER_ROW = "  🏆 {username}: {amount:.0f} € → +{profit:.0f} €\n"
-
-WINNERS_NO_PLAYERS = "  Ei voittajia.\n"
+WINNERS_NO_PLAYERS = "🚫 Ei voittajia.\n"
 
 WINNERS_NO_RESOLVED = "Ei ratkaistuja kohteita vielä."
 

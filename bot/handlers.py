@@ -751,10 +751,9 @@ async def _build_winners():
                     winners.append((w["username"] or f"user{bid}", float(w["amount"]), profit))
 
         if winners:
-            for username, amount, profit in winners:
-                msg += texts.WINNERS_PLAYER_ROW.format(
-                    username=username, amount=amount, profit=profit
-                )
+            winners.sort(key=lambda x: x[0].lower())
+            parts = [f"{name} (+{profit:,.0f} €)".replace(",", " ") for name, _, profit in winners]
+            msg += "🏆 " + ", ".join(parts) + "\n"
         else:
             msg += texts.WINNERS_NO_PLAYERS
         msg += "\n"
