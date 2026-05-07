@@ -708,8 +708,11 @@ async def _build_leaderboard():
     for i, row in enumerate(rows, 1):
         name = row["username"] or f"user{row['telegram_id']}"
         balance = float(row["balance"])
-        potential = balance + payouts.get(row["telegram_id"], 0.0)
-        msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=balance, potential=potential)
+        if game_done:
+            msg += texts.GAME_FINISHED_ROW.format(rank=i, username=name, balance=balance)
+        else:
+            potential = balance + payouts.get(row["telegram_id"], 0.0)
+            msg += texts.LEADERBOARD_ROW.format(rank=i, username=name, balance=balance, potential=potential)
     if game_done:
         msg += texts.GAME_FINISHED_NOTICE
     return msg

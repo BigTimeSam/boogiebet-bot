@@ -104,7 +104,9 @@ LEADERBOARD_ROW = "{rank}. {username}: {balance:.2f} € (maksimivoitto {potenti
 
 GAME_FINISHED_HEADER = "🏆 Lopulliset tulokset\n\n"
 
-GAME_FINISHED_NOTICE = "\n🔒 Peli on päättynyt. Muutoksia ei enää sallita."
+GAME_FINISHED_ROW = "{rank}. {username}: {balance:.2f} €\n"
+
+GAME_FINISHED_NOTICE = "\n🔒 Peli on päättynyt."
 
 GAME_OVER_BLOCK = "❌ Peli on päättynyt, muutoksia ei sallita."
 
