@@ -5,6 +5,8 @@ services:
       POSTGRES_DB: boogiebet
       POSTGRES_USER: boogiebet
       POSTGRES_PASSWORD: boogiebet
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
