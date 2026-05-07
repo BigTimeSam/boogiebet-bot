@@ -2,8 +2,8 @@ import os
 import functools
 
 _HEADER_TEMPLATE = (
-    "🎰 boogieBet {version} – Vedonlyöntikilpailu, jossa kilpailijat panostavat "
-    "1000 euroa eri kohteisiin ja selvitetään, kenellä on kilpailun päätteeksi eniten saldoa."
+    "🎰 boogieBet {version} – Jokaisella on 1000 € leikkirahaa ja liikaa itseluottamusta. "
+    "Katsotaan kenen käy hyvin."
 )
 
 
