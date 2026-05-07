@@ -17,7 +17,7 @@ def admin_panel_keyboard(game_finished: bool = False):
         ])
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("➕ Uusi kohde", callback_data="nav:new_bet"),
+            InlineKeyboardButton("🎯 Uusi kohde", callback_data="nav:new_bet"),
             InlineKeyboardButton("❌ Poista kohde", callback_data="adm:delete_list"),
         ],
         [
