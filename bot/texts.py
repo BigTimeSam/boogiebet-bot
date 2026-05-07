@@ -18,15 +18,12 @@ def H(text: str) -> str:
 
 
 WELCOME_NEW = (
-    "🎰 Tervetuloa boogieBet-bottiin, {name}!\n\n"
+    "Tervetuloa, {name}!\n\n"
     "Lähtösaldosi on 1 000,00 €.\n"
     "Lisää vetokohteita, tee vetoja — paras saldo voittaa!"
 )
 
-WELCOME_BACK = (
-    "🎰 boogieBet\n\n"
-    "Hei {name}! Saldosi: {balance:.2f} €"
-)
+WELCOME_BACK = "Hei {name}! Saldosi: {balance:.2f} €"
 
 BALANCE = "💰 Saldosi: {balance:.2f} €"
 
@@ -104,7 +101,7 @@ LEADERBOARD_HEADER = "🏆 Tulostaulu\n\n"
 
 LEADERBOARD_ROW = "{rank}. {username}: {balance:.2f} €\n"
 
-GAME_FINISHED_HEADER = "🏆 Lopulliset tulokset — boogieBet\n\n"
+GAME_FINISHED_HEADER = "🏆 Lopulliset tulokset\n\n"
 
 GAME_FINISHED_NOTICE = "\n🔒 Peli on päättynyt. Muutoksia ei enää sallita."
 
@@ -171,7 +168,7 @@ INVALID_WINNER_OPTIONS = (
 WINNER_BET_CREATED = "✅ Voittajaveto luotu!\n\n#{id}: {title}\n\n{options}"
 
 HELP_TEXT = (
-    "📖 boogieBet — komennot\n\n"
+    "📖 Komennot\n\n"
     "/start — rekisteröidy ja avaa päävalikko\n"
     "/kohteet — selaa vetokohteita ja tee vetoja\n"
     "/omat — näytä omat aktiiviset vetosi\n"
