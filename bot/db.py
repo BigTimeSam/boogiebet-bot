@@ -175,15 +175,16 @@ async def cancel_wager(user_id: int, bet_id: int):
             )
             if not wager:
                 return None
+            refund = round(float(wager["amount"]) * 0.95, 2)
             await conn.execute(
                 "UPDATE users SET balance = balance + $1 WHERE id = $2",
-                wager["amount"], user_id,
+                refund, user_id,
             )
             await conn.execute(
                 "DELETE FROM wagers WHERE user_id = $1 AND bet_id = $2",
                 user_id, bet_id,
             )
-            return float(wager["amount"])
+            return refund
 
 
 async def get_user_wagers_with_bets(user_id: int):

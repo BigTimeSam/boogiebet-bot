@@ -504,7 +504,7 @@ async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.answer("Vetoa ei voi peruuttaa — kohde ei ole enää auki.", show_alert=True)
         return
 
-    await query.answer(f"Veto peruutettu, {refunded:.2f} € palautettu saldolle.")
+    await query.answer(f"Cashout! {refunded:.2f} € palautettu saldolle (5% maksu pidätetty).")
     user = await db.get_user(query.from_user.id)
     text, keyboard = await _build_omat(user)
     await query.message.edit_text(text, reply_markup=keyboard)
@@ -527,7 +527,7 @@ async def _build_omat(user):
             status=status_map.get(w["status"], w["status"]),
         )
         if w["status"] == "open":
-            label = f"🗑️ Peruuta #{w['bet_id']} {w['title'][:25]}"
+            label = f"💸 Cashout (-5%) #{w['bet_id']} {w['title'][:20]}"
             keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
     keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])
     return msg, InlineKeyboardMarkup(keyboard)
