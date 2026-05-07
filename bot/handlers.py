@@ -551,6 +551,9 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
+MAX_WAGER = 200.0
+
+
 async def _process_wager(message, user, bet_id: int, side: str, amount: float,
                          is_admin=False, option_id: int = None):
     bet = await db.get_bet(bet_id)
@@ -562,6 +565,10 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         return
     if bet["status"] == "resolved":
         await message.reply_text(texts.BET_RESOLVED.format(id=bet_id))
+        return
+
+    if amount > MAX_WAGER:
+        await message.reply_text(texts.MAX_WAGER_EXCEEDED.format(max=MAX_WAGER))
         return
 
     existing = await db.get_user_wager(user["id"], bet_id)

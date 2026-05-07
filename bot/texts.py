@@ -49,6 +49,8 @@ WAGER_UPDATED = "🔄 Veto päivitetty!\n#{bet_id} {side} {amount:.2f} € @ {od
 
 NOT_ENOUGH_BALANCE = "❌ Ei tarpeeksi saldoa! Saldosi: {balance:.2f} €"
 
+MAX_WAGER_EXCEEDED = "❌ Maksimiveto per kohde on {max:.0f} €."
+
 BET_CREATED = "✅ Vetokohde luotu!\n\n#{id}: {title}\nKyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}"
 
 BET_DELETED = "🗑️ Vetokohde #{id} poistettu. Mahdolliset vedot palautettu."
