@@ -2,25 +2,25 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Write .env
-        run: |
-          cat > .env << 'EOF'
-          BOT_TOKEN=${{ secrets.BOT_TOKEN }}
-          DATABASE_URL=postgresql://boogiebet:boogiebet@db:5432/boogiebet
-          ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
-          EOF
-
-      - name: Deploy
-        run: docker compose up --build -d
-
-      - name: Clean up old images
-        run: docker image prune -f
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: prod-docker-01.poggers.fi
+          username: deploy
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/boogiebet-bot
+            git pull origin master
+            cat > .env << 'EOF'
+            BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+            DATABASE_URL=postgresql://boogiebet:boogiebet@db:5432/boogiebet
+            ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+            EOF
+            docker compose up --build -d
+            docker image prune -f
