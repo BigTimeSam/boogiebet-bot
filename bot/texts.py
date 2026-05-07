@@ -68,7 +68,7 @@ NOT_ENOUGH_BALANCE = "❌ Ei tarpeeksi saldoa! Saldosi: {balance:.2f} €"
 
 MAX_WAGER_EXCEEDED = "❌ Vetosumman täytyy olla {min:.0f}–{max:.0f} €."
 
-BET_CREATED = "✅ Vetokohde luotu!\n\n#{id}: {title}\n👍 Kyllä @ {yes_odds:.2f} | 👎 Ei @ {no_odds:.2f}"
+BET_CREATED = "✅ Vetokohde luotu!\n\n#{id}: {title}\n✅ Kyllä @ {yes_odds:.2f} | ❌ Ei @ {no_odds:.2f}"
 
 BET_DELETED = "🗑️ Vetokohde #{id} poistettu. Mahdolliset vedot palautettu."
 
