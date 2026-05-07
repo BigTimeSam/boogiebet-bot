@@ -13,13 +13,16 @@ def admin_panel_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Uusi kohde", callback_data="nav:new_bet"),
-            InlineKeyboardButton("🔒 Lukitse kohde", callback_data="adm:lock_list"),
+            InlineKeyboardButton("🗑️ Poista kohde", callback_data="adm:delete_list"),
         ],
         [
+            InlineKeyboardButton("🔒 Lukitse kohde", callback_data="adm:lock_list"),
             InlineKeyboardButton("✅ Ratkaise kohde", callback_data="adm:resolve_list"),
-            InlineKeyboardButton("🏁 Lopeta peli", callback_data="adm:finish"),
         ],
-        [InlineKeyboardButton("🔄 Resetoi kaikki", callback_data="adm:reset")],
+        [
+            InlineKeyboardButton("🏁 Lopeta peli", callback_data="adm:finish"),
+            InlineKeyboardButton("🔄 Resetoi kaikki", callback_data="adm:reset"),
+        ],
         [InlineKeyboardButton("⬅️ Päävalikko", callback_data="nav:main")],
     ])
 
@@ -151,6 +154,47 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     action = parts[1]
 
     if action == "panel":
+        await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
+
+    elif action == "delete_list":
+        bets = await db.get_open_bets()
+        if not bets:
+            await query.message.edit_text(texts.H("Ei avoimia kohteita poistettavaksi."), reply_markup=admin_panel_keyboard())
+            return
+        keyboard = [
+            [InlineKeyboardButton(f"🗑️ #{b['id']} {b['title']}", callback_data=f"adm:delete_confirm:{b['id']}")]
+            for b in bets
+        ]
+        keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
+        await query.message.edit_text(texts.H("🗑️ Valitse poistettava kohde:\n\nVedot palautetaan täysimääräisesti."), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif action == "delete_confirm":
+        bet_id = int(parts[2])
+        bet = await db.get_bet(bet_id)
+        if not bet:
+            await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
+            return
+        if bet["status"] != "open":
+            await query.answer(texts.BET_DELETE_FORBIDDEN, show_alert=True)
+            return
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Kyllä, poista", callback_data=f"adm:delete:{bet_id}"),
+                InlineKeyboardButton("❌ Peruuta", callback_data="adm:delete_list"),
+            ]
+        ])
+        await query.message.edit_text(
+            texts.H(f"⚠️ Poistetaanko kohde #{bet_id} {bet['title']}?\n\nKaikki vedot palautetaan täysimääräisesti."),
+            reply_markup=keyboard,
+        )
+
+    elif action == "delete":
+        bet_id = int(parts[2])
+        deleted = await db.delete_bet(bet_id)
+        if deleted:
+            await query.answer(f"🗑️ Kohde #{bet_id} poistettu.")
+        else:
+            await query.answer(texts.BET_DELETE_FORBIDDEN, show_alert=True)
         await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
 
     elif action == "lock_list":

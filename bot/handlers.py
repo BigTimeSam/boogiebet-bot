@@ -351,31 +351,6 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def delete_bet_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user = await db.get_user(query.from_user.id)
-    if not user:
-        return
-    if await db.is_game_finished():
-        await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
-        return
-
-    bet_id = int(query.data.split(":")[1])
-    bet = await db.get_bet(bet_id)
-    if not bet:
-        await query.answer("Kohdetta ei löydy.", show_alert=True)
-        return
-
-    deleted = await db.delete_bet(bet_id)
-    if deleted:
-        await query.answer(f"Vetokohde #{bet_id} poistettu.")
-        text, keyboard = await _build_kohteet(user)
-        await query.message.edit_text(texts.H(text), reply_markup=keyboard)
-    else:
-        await query.answer(texts.BET_DELETE_FORBIDDEN, show_alert=True)
-
 
 async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -611,7 +586,6 @@ async def _build_kohteet(user):
                         f"{o['label']} @ {float(o['odds']):.2f}",
                         callback_data=f"opt:{b['id']}:{o['id']}",
                     )])
-                keyboard.append([InlineKeyboardButton("🗑️ Poista kohde", callback_data=f"del:{b['id']}")])
         else:
             if is_open:
                 if w:
@@ -634,7 +608,6 @@ async def _build_kohteet(user):
                     keyboard.append([
                         InlineKeyboardButton(f"✅ Kyllä {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
                         InlineKeyboardButton(f"❌ Ei {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
-                        InlineKeyboardButton("🗑️", callback_data=f"del:{b['id']}"),
                     ])
             else:
                 if w:
