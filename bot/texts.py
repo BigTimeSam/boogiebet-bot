@@ -176,7 +176,7 @@ HELP_TEXT = (
     "Voit myös käyttää nappeja päävalikossa 👇"
 )
 
-ADMIN_PANEL = "🔧 Admin-paneeli\n\nMitä haluat tehdä?"
+ADMIN_PANEL = "🔧 Admin-paneeli"
 
 ADMIN_LOCK_LIST = "🔒 Valitse lukittava kohde:"
 

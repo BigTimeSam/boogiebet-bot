@@ -242,7 +242,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["state"] = AWAITING_BET_TITLE
         await query.message.reply_text(
             texts.H(texts.ASK_BET_TITLE),
-            reply_markup=ForceReply(selective=True),
+            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. Lanimestaruuden voittava kapteenipari?"),
         )
 
 
