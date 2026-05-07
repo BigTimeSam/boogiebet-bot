@@ -70,7 +70,7 @@ async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def saldo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
@@ -78,30 +78,30 @@ async def saldo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texts.H(texts.BALANCE.format(balance=float(user["balance"]))))
 
 
-async def kohteet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_bets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
         return
-    text, keyboard = await _build_kohteet(user)
+    text, keyboard = await _build_bets(user)
     await update.message.reply_text(texts.H(text), reply_markup=keyboard)
 
 
-async def omat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_my_bets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
         return
-    text, keyboard = await _build_omat(user)
+    text, keyboard = await _build_my_bets(user)
     await update.message.reply_text(texts.H(text), reply_markup=keyboard)
 
 
-async def tulokset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    text = await _build_tulokset()
+async def cmd_results(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    text = await _build_leaderboard()
     await update.message.reply_text(texts.H(text))
 
 
-async def vetoa(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_place_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
@@ -133,7 +133,7 @@ async def vetoa(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _process_wager(update.message, user, bet_id, side, amount)
 
 
-async def uusiveto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_new_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
@@ -169,7 +169,7 @@ async def uusiveto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )))
 
 
-async def poistakohde(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_delete_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
@@ -224,13 +224,13 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=back_keyboard(),
         )
     elif action == "kohteet":
-        text, keyboard = await _build_kohteet(user)
+        text, keyboard = await _build_bets(user)
         await query.message.edit_text(texts.H(text), reply_markup=keyboard)
     elif action == "omat":
-        text, keyboard = await _build_omat(user)
+        text, keyboard = await _build_my_bets(user)
         await query.message.edit_text(texts.H(text), reply_markup=keyboard)
     elif action == "tulokset":
-        text = await _build_tulokset()
+        text = await _build_leaderboard()
         await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
     elif action == "new_bet":
         if not user["is_admin"]:
@@ -414,7 +414,7 @@ async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await query.answer(f"Cashout! {refunded:.2f} € palautettu saldolle (5% maksu pidätetty).")
     user = await db.get_user(query.from_user.id)
-    text, keyboard = await _build_omat(user)
+    text, keyboard = await _build_my_bets(user)
     await query.message.edit_text(texts.H(text), reply_markup=keyboard)
 
 
@@ -606,7 +606,7 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
     return False
 
 
-async def _build_kohteet(user):
+async def _build_bets(user):
     game_done = await db.is_game_finished()
     bets = await db.get_active_bets()
     my_wagers = {w["bet_id"]: w for w in await db.get_user_wagers_with_bets(user["id"])}
@@ -653,7 +653,7 @@ async def _build_kohteet(user):
     return msg, InlineKeyboardMarkup(keyboard)
 
 
-async def _build_omat(user):
+async def _build_my_bets(user):
     wagers = await db.get_user_wagers_with_bets(user["id"])
     if not wagers:
         return texts.NO_WAGERS, back_keyboard()
@@ -696,7 +696,7 @@ async def _build_omat(user):
     return msg, InlineKeyboardMarkup(keyboard)
 
 
-async def _build_tulokset():
+async def _build_leaderboard():
     rows = await db.get_leaderboard()
     if not rows:
         return "Ei pelaajia vielä."

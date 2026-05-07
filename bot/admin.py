@@ -13,7 +13,7 @@ def admin_panel_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Uusi kohde", callback_data="nav:new_bet"),
-            InlineKeyboardButton("🗑️ Poista kohde", callback_data="adm:delete_list"),
+            InlineKeyboardButton("❌ Poista kohde", callback_data="adm:delete_list"),
         ],
         [
             InlineKeyboardButton("🔒 Lukitse/vapauta kohde", callback_data="adm:lock_list"),
@@ -50,7 +50,7 @@ async def admin_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard())
 
 
-async def lukitse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_lock(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
         await update.message.reply_text(texts.H(texts.NOT_ADMIN))
@@ -74,7 +74,7 @@ async def lukitse(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texts.H(texts.BET_LOCKED_OK.format(id=bet_id)))
 
 
-async def ratkaise(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_resolve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
         await update.message.reply_text(texts.H(texts.NOT_ADMIN))
@@ -110,7 +110,7 @@ async def ratkaise(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )))
 
 
-async def lopeta(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_finish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
         await update.message.reply_text(texts.H(texts.NOT_ADMIN))
@@ -129,8 +129,8 @@ async def lopeta(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _finish_game(update)
 
 
-async def lopeta_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await lopeta(update, ctx)
+async def cmd_finish_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await cmd_finish(update, ctx)
 
 
 async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

@@ -40,19 +40,19 @@ def main():
     # User commands
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.help_command))
-    app.add_handler(CommandHandler("saldo", handlers.saldo))
-    app.add_handler(CommandHandler("kohteet", handlers.kohteet))
-    app.add_handler(CommandHandler("vetoa", handlers.vetoa))
-    app.add_handler(CommandHandler("uusiveto", handlers.uusiveto))
-    app.add_handler(CommandHandler("poistakohde", handlers.poistakohde))
-    app.add_handler(CommandHandler("omat", handlers.omat))
-    app.add_handler(CommandHandler("tulokset", handlers.tulokset))
+    app.add_handler(CommandHandler("saldo", handlers.cmd_balance))
+    app.add_handler(CommandHandler("kohteet", handlers.cmd_bets))
+    app.add_handler(CommandHandler("vetoa", handlers.cmd_place_bet))
+    app.add_handler(CommandHandler("uusiveto", handlers.cmd_new_bet))
+    app.add_handler(CommandHandler("poistakohde", handlers.cmd_delete_bet))
+    app.add_handler(CommandHandler("omat", handlers.cmd_my_bets))
+    app.add_handler(CommandHandler("tulokset", handlers.cmd_results))
 
     # Admin commands
     app.add_handler(CommandHandler("admin", admin.register))
-    app.add_handler(CommandHandler("lukitse", admin.lukitse))
-    app.add_handler(CommandHandler("ratkaise", admin.ratkaise))
-    app.add_handler(CommandHandler("lopeta", admin.lopeta_confirm))
+    app.add_handler(CommandHandler("lukitse", admin.cmd_lock))
+    app.add_handler(CommandHandler("ratkaise", admin.cmd_resolve))
+    app.add_handler(CommandHandler("lopeta", admin.cmd_finish_confirm))
 
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(admin.admin_callback, pattern=r"^adm:"))
