@@ -299,7 +299,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     odds = float(bet["yes_odds"]) if side == "yes" else float(bet["no_odds"])
-    side_fi = "kyllä" if side == "yes" else "ei"
+    side_fi = "Kyllä" if side == "yes" else "Ei"
 
     existing = await db.get_user_wager(user["id"], bet_id)
     if existing and existing["side"] != side:
@@ -585,7 +585,7 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         side_fi = option["label"] if option else side
     else:
         odds = float(bet["yes_odds"]) if side == "yes" else float(bet["no_odds"])
-        side_fi = "kyllä" if side == "yes" else "ei"
+        side_fi = "Kyllä" if side == "yes" else "Ei"
 
     payout = new_total * odds
     template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
@@ -658,7 +658,7 @@ async def _build_omat(user):
             side_fi = w["option_label"] or "?"
             odds = float(w["option_odds"]) if w["option_odds"] else 0.0
         else:
-            side_fi = "kyllä" if w["side"] == "yes" else "ei"
+            side_fi = "Kyllä" if w["side"] == "yes" else "Ei"
             odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
         msg += texts.WAGER_ROW.format(
             bet_id=w["bet_id"], title=w["title"], side=side_fi,
