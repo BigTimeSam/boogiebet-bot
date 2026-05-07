@@ -742,7 +742,12 @@ async def _build_winners():
     for bid in bets_seen:
         wagers = by_bet[bid]
         first = wagers[0]
-        msg += texts.WINNERS_BET_SECTION.format(id=bid, title=first["title"])
+        if first["bet_type"] == "winner":
+            winning_row = next((w for w in wagers if str(w["option_id"]) == str(first["result"])), None)
+            result_label = winning_row["option_label"] if winning_row else f"#{first['result']}"
+        else:
+            result_label = "Kyllä" if first["result"] == "yes" else "Ei"
+        msg += texts.WINNERS_BET_SECTION.format(id=bid, title=first["title"], result=result_label)
 
         winners = []
         losers = []

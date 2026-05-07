@@ -181,7 +181,7 @@ HELP_TEXT = (
 
 WINNERS_HEADER = "🏆 Voittajat\n\n"
 
-WINNERS_BET_SECTION = "#{id} {title}\n"
+WINNERS_BET_SECTION = "#{id} {title}\nTulos: {result}\n"
 
 WINNERS_NO_PLAYERS = "🚫 Ei voittajia.\n"
 
