@@ -585,11 +585,13 @@ async def _build_kohteet(user):
                     f"🏆 #{b['id']} {b['title']}",
                     callback_data=f"noop:{b['id']}",
                 )])
-                for o in options:
-                    keyboard.append([InlineKeyboardButton(
+                keyboard.append([
+                    InlineKeyboardButton(
                         f"{o['label']} @ {float(o['odds']):.2f}",
                         callback_data=f"opt:{b['id']}:{o['id']}",
-                    )])
+                    )
+                    for o in options[:4]
+                ])
         else:
             if is_open:
                 if w:
