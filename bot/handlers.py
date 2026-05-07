@@ -469,7 +469,7 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     pending = ctx.user_data.get(AWAITING_WINNER_OPTIONS, {})
     title = pending.get("title", "")
 
-    lines = [l.strip() for l in update.message.text.strip().splitlines() if l.strip()]
+    lines = [l.strip() for l in update.message.text.strip().split("|") if l.strip()]
     options = []
     for line in lines:
         if "@" not in line:

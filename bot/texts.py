@@ -149,20 +149,17 @@ ASK_BET_TYPE = (
 ASK_WINNER_OPTIONS = (
     "Voittajaveto — vaihe 2/2\n\n"
     "Kohde: {title}\n\n"
-    "Syötä vaihtoehdot, yksi per rivi muodossa:\n"
-    "Nimi @ kerroin\n\n"
+    "Syötä vaihtoehdot putkimerkillä erotettuna muodossa:\n"
+    "Nimi @ kerroin | Nimi @ kerroin | ...\n\n"
     "esim.\n"
-    "Suomi @ 3.50\n"
-    "Ruotsi @ 2.00\n"
-    "Saksa @ 4.50"
+    "Suomi @ 3.50 | Ruotsi @ 2.00 | Saksa @ 4.50"
 )
 
 INVALID_WINNER_OPTIONS = (
-    "❌ Tarkista muoto. Vähintään 2 vaihtoehtoa, yksi per rivi:\n"
-    "Nimi @ kerroin  (kerroin > 1.0)\n\n"
+    "❌ Tarkista muoto. Vähintään 2 vaihtoehtoa putkella erotettuna:\n"
+    "Nimi @ kerroin | Nimi @ kerroin  (kerroin > 1.0)\n\n"
     "esim.\n"
-    "Suomi @ 3.50\n"
-    "Ruotsi @ 2.00"
+    "Suomi @ 3.50 | Ruotsi @ 2.00 | Saksa @ 4.50"
 )
 
 WINNER_BET_CREATED = "✅ Voittajaveto luotu!\n\n#{id}: {title}\n\n{options}"
