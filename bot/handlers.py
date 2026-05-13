@@ -747,11 +747,6 @@ async def _build_bets(user):
 
                 for row in _option_rows(options, _make_btn):
                     keyboard.append(row)
-                if float(b["min_wager"]) != float(b["max_wager"]):
-                    keyboard.append([InlineKeyboardButton(
-                        f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
-                        callback_data=f"noop:{b['id']}",
-                    )])
         else:
             if not game_done:
                 lock_prefix = "" if is_open else "🔒 "
@@ -761,11 +756,6 @@ async def _build_bets(user):
                     InlineKeyboardButton(f"{'🎯 ' if my_side == 'yes' else ''}Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
                     InlineKeyboardButton(f"{'🎯 ' if my_side == 'no' else ''}Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
                 ])
-                if float(b["min_wager"]) != float(b["max_wager"]):
-                    keyboard.append([InlineKeyboardButton(
-                        f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
-                        callback_data=f"noop:{b['id']}",
-                    )])
 
     keyboard.append(bottom_row)
     return msg, InlineKeyboardMarkup(keyboard)
