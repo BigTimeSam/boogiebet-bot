@@ -281,6 +281,12 @@ async def resolve_winner_bet(bet_id: int, winning_option_id: int):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            valid = await conn.fetchval(
+                "SELECT COUNT(*) FROM bet_options WHERE id = $1 AND bet_id = $2",
+                winning_option_id, bet_id,
+            )
+            if not valid:
+                return None
             await conn.execute(
                 "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2",
                 str(winning_option_id), bet_id,

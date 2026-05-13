@@ -313,6 +313,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if bet["bet_type"] == "winner":
             winning_option_id = int(value)
             winners = await db.resolve_winner_bet(bet_id, winning_option_id)
+            if winners is None:
+                await query.answer("❌ Virheellinen vaihtoehto tälle vedolle.", show_alert=True)
+                return
             options = await db.get_bet_options(bet_id)
             winning = next((o for o in options if o["id"] == winning_option_id), None)
             result_fi = f"🏆 {winning['label']}" if winning else f"Option {winning_option_id}"

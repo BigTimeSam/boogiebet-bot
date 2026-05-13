@@ -562,6 +562,12 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        ctx.user_data.pop("state", None)
+        return
+
     title = update.message.text.strip()
     if not title:
         await update.message.reply_text(
@@ -663,6 +669,12 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
 async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        ctx.user_data.pop("state", None)
+        return
+
     pending = ctx.user_data.get(AWAITING_WAGER_LIMITS)
     if not pending:
         ctx.user_data.pop("state", None)
@@ -693,7 +705,6 @@ async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.pop("state", None)
     ctx.user_data.pop(AWAITING_WAGER_LIMITS, None)
 
-    user = await db.get_user(update.effective_user.id)
     bet = await db.get_bet(bet_id)
     if not updated or not bet:
         await update.message.reply_text(texts.H("❌ Panosrajojen asetus epäonnistui. Kohde ei ehkä ole enää auki."), reply_markup=await _main_keyboard(user))
@@ -716,6 +727,9 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         return False
     if bet["status"] == "resolved":
         await message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
+        return False
+    if bet["bet_type"] == "winner" and option_id is None:
+        await message.reply_text(texts.H("❌ Tämä on voittajaveto — käytä painikkeita panostamiseen."))
         return False
 
     if amount < MIN_WAGER:
