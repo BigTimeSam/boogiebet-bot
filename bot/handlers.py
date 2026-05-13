@@ -356,11 +356,12 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["state"] = AWAITING_AMOUNT
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": side, "min_wager": bet_min, "max_wager": float(bet_max)}
 
+    amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
     await query.message.reply_text(
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=side_fi, odds=odds,
             balance=float(user["balance"]), existing=existing_info,
-            min=bet_min, max=bet_max,
+            amount_hint=amount_hint,
         )),
         reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
     )
@@ -424,11 +425,12 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["state"] = AWAITING_AMOUNT
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id, "min_wager": bet_min, "max_wager": float(bet_max)}
 
+    amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
     await query.message.reply_text(
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=option["label"],
             odds=float(option["odds"]), balance=float(user["balance"]),
-            existing=existing_info, min=bet_min, max=bet_max,
+            existing=existing_info, amount_hint=amount_hint,
         )),
         reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
     )
@@ -500,9 +502,10 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         is_admin=user["is_admin"], option_id=option_id,
     )
     if retryable:
+        amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
         await update.message.reply_text(
             reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
-            text=texts.H(f"Syötä vetosumma euroissa ({int(bet_min)}–{int(bet_max)} €):"),
+            text=texts.H(f"Syötä vetosumma euroissa ({amount_hint}):"),
         )
     else:
         ctx.user_data.pop("state", None)
@@ -744,10 +747,11 @@ async def _build_bets(user):
 
                 for row in _option_rows(options, _make_btn):
                     keyboard.append(row)
-                keyboard.append([InlineKeyboardButton(
-                    f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
-                    callback_data=f"noop:{b['id']}",
-                )])
+                if float(b["min_wager"]) != float(b["max_wager"]):
+                    keyboard.append([InlineKeyboardButton(
+                        f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
+                        callback_data=f"noop:{b['id']}",
+                    )])
         else:
             if not game_done:
                 lock_prefix = "" if is_open else "🔒 "
@@ -757,10 +761,11 @@ async def _build_bets(user):
                     InlineKeyboardButton(f"{'🎯 ' if my_side == 'yes' else ''}Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
                     InlineKeyboardButton(f"{'🎯 ' if my_side == 'no' else ''}Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
                 ])
-                keyboard.append([InlineKeyboardButton(
-                    f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
-                    callback_data=f"noop:{b['id']}",
-                )])
+                if float(b["min_wager"]) != float(b["max_wager"]):
+                    keyboard.append([InlineKeyboardButton(
+                        f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
+                        callback_data=f"noop:{b['id']}",
+                    )])
 
     keyboard.append(bottom_row)
     return msg, InlineKeyboardMarkup(keyboard)

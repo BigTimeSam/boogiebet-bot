@@ -54,7 +54,7 @@ ASK_AMOUNT = (
     "#{bet_id} {title}\n"
     "Valitsit: {side} @ {odds:.2f}\n"
     "Saldosi: {balance:.0f} €{existing}\n\n"
-    "Syötä vetosumma euroissa ({min:.0f}–{max:.0f} €):"
+    "Syötä vetosumma euroissa ({amount_hint}):"
 )
 
 WAGER_PLACED = "✅ Veto lyöty!\n#{bet_id} {title} {side_icon} {side}\nPanos: {amount:.0f} € @ {odds:.2f} | Voit voittaa: {payout:.0f} €\n\nSaldosi nyt: {balance:.0f} €"
