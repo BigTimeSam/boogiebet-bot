@@ -27,7 +27,7 @@ BALANCE = "💰 Saldosi: {balance:.0f} €"
 
 NO_BETS = "Ei vetokohteita vielä. Tee valitus orgalle."
 
-BET_LIST_HEADER = "📋 Vetokohteet\n\n"
+BET_LIST_HEADER = "🔒 = Kohde on lukittu eikä siihen voi enää asettaa panoksia.\n🎯 = Olet panostanut kyseiseen kohteeseen tätä valintaa.\n\n📋 Vetokohteet\n\n"
 
 BET_ROW_OPEN = "#{id} {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n\n"
 
