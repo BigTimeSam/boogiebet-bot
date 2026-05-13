@@ -307,6 +307,10 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user = await db.get_user(query.from_user.id)
+    if not user or not user["is_admin"]:
+        await query.answer(texts.NOT_ADMIN, show_alert=True)
+        return
     await query.answer()
 
     pending = ctx.user_data.pop(AWAITING_BET_TYPE, {})
@@ -576,6 +580,12 @@ async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        ctx.user_data.pop("state", None)
+        return
+
     pending = ctx.user_data.get(AWAITING_BET_ODDS, {})
     title = pending.get("title", "")
 
@@ -594,7 +604,6 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.pop("state", None)
     ctx.user_data.pop(AWAITING_BET_ODDS, None)
 
-    user = await db.get_user(update.effective_user.id)
     bet = await db.create_bet(title, yes_odds, no_odds, user["id"])
     await update.message.reply_text(
         texts.H(texts.BET_CREATED.format(
@@ -606,6 +615,12 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        ctx.user_data.pop("state", None)
+        return
+
     pending = ctx.user_data.get(AWAITING_WINNER_OPTIONS, {})
     title = pending.get("title", "")
 
@@ -637,7 +652,6 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     ctx.user_data.pop("state", None)
     ctx.user_data.pop(AWAITING_WINNER_OPTIONS, None)
 
-    user = await db.get_user(update.effective_user.id)
     bet = await db.create_winner_bet(title, options, user["id"])
     options_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in bet["options"])
     await update.message.reply_text(

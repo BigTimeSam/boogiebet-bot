@@ -155,7 +155,8 @@ async def update_simple_bet_odds(bet_id: int, yes_odds: float, no_odds: float) -
     pool = await get_pool()
     result = await pool.execute(
         "UPDATE bets SET yes_odds = $1, no_odds = $2 "
-        "WHERE id = $3 AND status = 'locked' AND bet_type = 'simple'",
+        "WHERE id = $3 AND status = 'locked' AND bet_type = 'simple' "
+        "AND (SELECT COUNT(*) FROM wagers WHERE bet_id = $3) = 0",
         yes_odds, no_odds, bet_id,
     )
     return result == "UPDATE 1"
@@ -171,6 +172,11 @@ async def update_winner_bet_option_odds(bet_id: int, option_odds: list) -> bool:
                 bet_id,
             )
             if not check:
+                return False
+            wager_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM wagers WHERE bet_id = $1", bet_id
+            )
+            if wager_count > 0:
                 return False
             for position, new_odds in option_odds:
                 await conn.execute(
