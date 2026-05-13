@@ -224,6 +224,6 @@ WAGER_LIMITS_SET = "✅ Panosrajat asetettu!\n#{id} {title}\nMin: {min:.0f} € 
 
 INVALID_WAGER_LIMITS = (
     "❌ Tarkista panosrajat.\n"
-    "Min täytyy olla vähintään 20 € ja max enintään 200 €, ja min < max.\n\n"
-    "esim.  50 150"
+    "Min täytyy olla vähintään 20 € ja max enintään 200 €, ja min ≤ max.\n\n"
+    "esim.  50 150  tai  20 20 (kiinteä panos)"
 )

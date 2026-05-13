@@ -616,7 +616,7 @@ async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             raise ValueError
         new_min = float(int(new_min))
         new_max = float(int(new_max))
-        if new_min < MIN_WAGER or new_max > MAX_WAGER or new_min >= new_max:
+        if new_min < MIN_WAGER or new_max > MAX_WAGER or new_min > new_max:
             raise ValueError
     except ValueError:
         await update.message.reply_text(
