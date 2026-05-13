@@ -444,6 +444,51 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(texts.ADMIN_RESET_DONE), reply_markup=admin_panel_keyboard())
 
 
+async def cmd_list_weights(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
+    bets = await db.get_active_bets()
+    if not bets:
+        await update.message.reply_text(texts.H(texts.WEIGHT_NO_BETS))
+        return
+    msg = texts.WEIGHT_LIST_HEADER
+    msg += "".join(
+        texts.WEIGHT_ROW.format(id=b["id"], title=b["title"], weight=b["weight"])
+        for b in bets
+    )
+    msg += "\nMuuta painoa: /weight <id> <paino>"
+    await update.message.reply_text(texts.H(msg))
+
+
+async def cmd_set_weight(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
+    if len(ctx.args) != 2:
+        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/weight <id> <paino>")))
+        return
+    try:
+        bet_id = int(ctx.args[0])
+        weight = int(ctx.args[1])
+    except ValueError:
+        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/weight <id> <paino>")))
+        return
+    bet = await db.get_bet(bet_id)
+    if not bet:
+        await update.message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
+        return
+    ok = await db.set_bet_weight(bet_id, weight)
+    if not ok:
+        await update.message.reply_text(texts.H(texts.WEIGHT_SET_FORBIDDEN))
+        return
+    await update.message.reply_text(texts.H(texts.WEIGHT_SET.format(
+        id=bet_id, title=bet["title"], weight=weight,
+    )))
+
+
 async def cmd_update_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:

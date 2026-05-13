@@ -36,6 +36,9 @@ async def _migrate(pool):
         await conn.execute(
             "ALTER TABLE bets ADD COLUMN IF NOT EXISTS max_wager NUMERIC(6,2) NOT NULL DEFAULT 200"
         )
+        await conn.execute(
+            "ALTER TABLE bets ADD COLUMN IF NOT EXISTS weight INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 async def get_pool():
@@ -74,14 +77,14 @@ async def get_active_bets():
     rows = await pool.fetch(
         "SELECT b.*, u.username AS creator_name "
         "FROM bets b LEFT JOIN users u ON u.id = b.created_by "
-        "WHERE b.status IN ('open', 'locked') ORDER BY b.id"
+        "WHERE b.status IN ('open', 'locked') ORDER BY b.weight DESC, b.id"
     )
     return [dict(r) for r in rows]
 
 
 async def get_open_bets():
     pool = await get_pool()
-    rows = await pool.fetch("SELECT * FROM bets WHERE status = 'open' ORDER BY id")
+    rows = await pool.fetch("SELECT * FROM bets WHERE status = 'open' ORDER BY weight DESC, id")
     return [dict(r) for r in rows]
 
 
@@ -129,6 +132,15 @@ async def create_winner_bet(title: str, options: list, created_by: int):
             result = dict(bet)
             result["options"] = opt_rows
             return result
+
+
+async def set_bet_weight(bet_id: int, weight: int) -> bool:
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE bets SET weight = $1 WHERE id = $2 AND status IN ('open', 'locked')",
+        weight, bet_id,
+    )
+    return result == "UPDATE 1"
 
 
 async def get_bet_wager_count(bet_id: int) -> int:
@@ -372,6 +384,12 @@ async def get_user_open_wager_stats(user_id: int):
             odds = float(r["yes_odds"]) if r["side"] == "yes" else float(r["no_odds"])
             total_payout += amount * odds
     return total_wagered, total_payout
+
+
+async def get_all_telegram_ids() -> list[int]:
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT telegram_id FROM users")
+    return [r["telegram_id"] for r in rows]
 
 
 async def get_leaderboard():

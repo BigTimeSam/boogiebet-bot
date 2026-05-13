@@ -1,8 +1,11 @@
+import logging
 import math
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from telegram.ext import ContextTypes
 import db
 import texts
+
+logger = logging.getLogger(__name__)
 
 # user_data state keys
 AWAITING_AMOUNT = "awaiting_amount"
@@ -77,6 +80,26 @@ async def _main_text(user, name: str = None, is_new: bool = False) -> str:
     if wagered > 0:
         base += "\n" + texts.WAGER_STATS.format(wagered=wagered, potential=balance + payout)
     return base
+
+
+async def _broadcast_new_bet(bot, bet: dict, options: list = None):
+    """Send a new-bet notification to all registered users. Silently skips unreachable users."""
+    telegram_ids = await db.get_all_telegram_ids()
+    if options:
+        opts_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in options)
+        text = texts.NEW_BET_NOTIFICATION_WINNER.format(
+            id=bet["id"], title=bet["title"], options=opts_text
+        )
+    else:
+        text = texts.NEW_BET_NOTIFICATION_SIMPLE.format(
+            id=bet["id"], title=bet["title"],
+            yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
+        )
+    for tid in telegram_ids:
+        try:
+            await bot.send_message(chat_id=tid, text=text)
+        except Exception:
+            logger.debug("Could not send new-bet notification to %s", tid)
 
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -194,6 +217,7 @@ async def cmd_new_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         id=bet["id"], title=bet["title"],
         yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
     )))
+    await _broadcast_new_bet(ctx.bot, bet)
 
 
 async def cmd_delete_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -558,6 +582,7 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )),
         reply_markup=await _main_keyboard(user),
     )
+    await _broadcast_new_bet(ctx.bot, bet)
 
 
 async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -599,6 +624,7 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         texts.H(texts.WINNER_BET_CREATED.format(id=bet["id"], title=bet["title"], options=options_text)),
         reply_markup=await _main_keyboard(user),
     )
+    await _broadcast_new_bet(ctx.bot, bet, options=bet["options"])
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────

@@ -190,7 +190,13 @@ WINNERS_NO_PLAYERS = "🚫 Ei voittajia.\n"
 
 WINNERS_NO_RESOLVED = "Ei ratkaistuja kohteita vielä."
 
-ADMIN_PANEL = "🔧 Admin-paneeli"
+ADMIN_PANEL = (
+    "🔧 Admin-paneeli\n\n"
+    "Kohteiden järjestystä voit vaihtaa asettamalla kohteille painoarvon. "
+    "Komennolla /weights näet kaikkien kohteiden nykyiset painot. "
+    "Komennolla /weight <id> <paino> asetat yksittäiselle kohteelle painon — "
+    "suurempi luku nostaa kohteen korkeammalle Vetokohteet-listalla."
+)
 
 ADMIN_LOCK_LIST = "🔒 Valitse lukittava kohde:"
 
@@ -252,6 +258,20 @@ ODDS_UPDATE_FORBIDDEN = "❌ Kertoimia voi muuttaa vain lukituille kohteille joi
 
 ODDS_UPDATE_BET_NOT_FOUND = "❌ Kohdetta #{id} ei löydy tai se ei ole lukittu ilman vetoja."
 
+NEW_BET_NOTIFICATION_SIMPLE = (
+    "🎰 Uusi vetokohde avattu!\n\n"
+    "#{id} {title}\n\n"
+    "✅ Kyllä @ {yes_odds:.2f}  |  ❌ Ei @ {no_odds:.2f}\n\n"
+    "Muista tehdä vetosi ajoissa! 👉 /kohteet"
+)
+
+NEW_BET_NOTIFICATION_WINNER = (
+    "🎰 Uusi vetokohde avattu!\n\n"
+    "#{id} {title}\n\n"
+    "{options}\n"
+    "Muista tehdä vetosi ajoissa! 👉 /kohteet"
+)
+
 INVALID_ODDS_CMD_SIMPLE = (
     "❌ Tarkista muoto: /kertoimet <id> <kyllä_kerroin> <ei_kerroin>\n\n"
     "esim.  /kertoimet 3 2.50 1.40"
@@ -261,3 +281,13 @@ INVALID_ODDS_CMD_WINNER = (
     "❌ Tarkista muoto: /kertoimet <id> Vaihtoehto @ kerroin | Vaihtoehto @ kerroin | ...\n\n"
     "esim.  /kertoimet 3 Osmo @ 2.80 | Zyrk @ 2.50 | Damu @ 3.00"
 )
+
+WEIGHT_LIST_HEADER = "⚖️ Kohteiden painot (suurempi paino = korkeammalle listalla)\n\n"
+
+WEIGHT_ROW = "#{id} {title} — paino: {weight}\n"
+
+WEIGHT_SET = "✅ Paino asetettu!\n#{id} {title} — paino: {weight}"
+
+WEIGHT_SET_FORBIDDEN = "❌ Painon voi asettaa vain aktiivisille kohteille (avoin tai lukittu)."
+
+WEIGHT_NO_BETS = "Ei aktiivisia kohteita."
