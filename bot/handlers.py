@@ -227,6 +227,9 @@ async def cmd_delete_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not user:
         await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
         return
+    if not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
     if await db.is_game_finished():
         await update.message.reply_text(texts.H(texts.GAME_OVER_BLOCK))
         return
