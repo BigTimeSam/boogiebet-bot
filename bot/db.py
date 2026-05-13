@@ -320,9 +320,12 @@ async def place_wager(user_id: int, bet_id: int, side: str, amount: float, optio
             )
             refund = float(existing["amount"]) if existing else 0.0
             balance = await conn.fetchval(
-                "UPDATE users SET balance = balance + $1 - $2 WHERE id = $3 RETURNING balance",
+                "UPDATE users SET balance = balance + $1 - $2 "
+                "WHERE id = $3 AND balance + $1 - $2 >= 0 RETURNING balance",
                 refund, amount, user_id,
             )
+            if balance is None:
+                return None, existing is not None
             if existing:
                 await conn.execute(
                     "UPDATE wagers SET side = $1, amount = $2, option_id = $3 "

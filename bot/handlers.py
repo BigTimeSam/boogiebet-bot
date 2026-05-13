@@ -731,7 +731,11 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         await message.reply_text(texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))))
         return True
 
-    new_balance, updated = await db.place_wager(user["id"], bet_id, side, new_total, option_id=option_id)
+    result = await db.place_wager(user["id"], bet_id, side, new_total, option_id=option_id)
+    if result[0] is None:
+        await message.reply_text(texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))))
+        return True
+    new_balance, updated = result
 
     if option_id is not None:
         options = await db.get_bet_options(bet_id)

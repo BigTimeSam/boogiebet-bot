@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS users (
     id          SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
     username    VARCHAR(255),
-    balance     NUMERIC(10,2) DEFAULT 1000.00,
+    balance     NUMERIC(10,2) DEFAULT 1000.00 CHECK (balance >= 0),
     is_admin    BOOLEAN DEFAULT FALSE,
     created_at  TIMESTAMP DEFAULT NOW()
 );

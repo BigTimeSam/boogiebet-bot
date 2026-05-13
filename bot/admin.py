@@ -1,4 +1,5 @@
 import os
+from html import escape
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 import db
@@ -359,11 +360,11 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         if bet["bet_type"] == "winner":
             options = await db.get_bet_options(bet_id)
-            opts_str = " | ".join(f"{o['label']} @ {float(o['odds']):.2f}" for o in options)
-            msg = texts.ODDS_COPY_PASTE_WINNER.format(id=bet_id, title=bet["title"], options=opts_str)
+            opts_str = " | ".join(f"{escape(o['label'])} @ {float(o['odds']):.2f}" for o in options)
+            msg = texts.ODDS_COPY_PASTE_WINNER.format(id=bet_id, title=escape(bet["title"]), options=opts_str)
         else:
             msg = texts.ODDS_COPY_PASTE_SIMPLE.format(
-                id=bet_id, title=bet["title"],
+                id=bet_id, title=escape(bet["title"]),
                 yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
             )
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:odds_list")]])
