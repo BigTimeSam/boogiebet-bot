@@ -1,5 +1,4 @@
 import logging
-import math
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from telegram.ext import ContextTypes
 import db
@@ -21,15 +20,11 @@ MAX_WINNER_OPTIONS = 6
 
 
 def _option_rows(options, btn_maker):
-    """Split options into keyboard rows: ≤3 → one row, 4 → 2+2, 5 → 3+2, 6 → 3+3."""
-    n = len(options)
-    if n <= 3:
-        return [[btn_maker(o) for o in options]]
-    split = math.ceil(n / 2)
-    return [
-        [btn_maker(o) for o in options[:split]],
-        [btn_maker(o) for o in options[split:]],
-    ]
+    """Split options into rows of max 2 buttons each."""
+    rows = []
+    for i in range(0, len(options), 2):
+        rows.append([btn_maker(o) for o in options[i:i + 2]])
+    return rows
 
 
 def main_menu_keyboard(is_admin=False, game_done=False, has_winners=False):
