@@ -227,3 +227,37 @@ INVALID_WAGER_LIMITS = (
     "Min täytyy olla vähintään 20 € ja max enintään 200 €, ja min ≤ max.\n\n"
     "esim.  50 150  tai  20 20 (kiinteä panos)"
 )
+
+ADMIN_ODDS_LIST = "✏️ Valitse kohde jonka kertoimia haluat muuttaa:\n\n(Vain lukitut kohteet ilman vetoja)"
+
+ADMIN_NO_ODDS_BETS = "Ei lukittuja kohteita ilman vetoja."
+
+ODDS_COPY_PASTE_SIMPLE = (
+    "✏️ Muokkaa kertoimia — #{id} {title}\n\n"
+    "Kopioi alla oleva komento, muokkaa kertoimia ja lähetä takaisin:\n\n"
+    "<code>/kertoimet {id} {yes_odds} {no_odds}</code>"
+)
+
+ODDS_COPY_PASTE_WINNER = (
+    "✏️ Muokkaa kertoimia — #{id} {title}\n\n"
+    "Kopioi alla oleva komento, muokkaa kertoimia ja lähetä takaisin:\n\n"
+    "<code>/kertoimet {id} {options}</code>"
+)
+
+ODDS_UPDATED_SIMPLE = "✅ Kertoimet päivitetty!\n#{id} {title}\nKyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}"
+
+ODDS_UPDATED_WINNER = "✅ Kertoimet päivitetty!\n#{id} {title}\n\n{options}"
+
+ODDS_UPDATE_FORBIDDEN = "❌ Kertoimia voi muuttaa vain lukituille kohteille joissa ei ole vetoja."
+
+ODDS_UPDATE_BET_NOT_FOUND = "❌ Kohdetta #{id} ei löydy tai se ei ole lukittu ilman vetoja."
+
+INVALID_ODDS_CMD_SIMPLE = (
+    "❌ Tarkista muoto: /kertoimet <id> <kyllä_kerroin> <ei_kerroin>\n\n"
+    "esim.  /kertoimet 3 2.50 1.40"
+)
+
+INVALID_ODDS_CMD_WINNER = (
+    "❌ Tarkista muoto: /kertoimet <id> Vaihtoehto @ kerroin | Vaihtoehto @ kerroin | ...\n\n"
+    "esim.  /kertoimet 3 Osmo @ 2.80 | Zyrk @ 2.50 | Damu @ 3.00"
+)

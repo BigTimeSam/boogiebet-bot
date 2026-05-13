@@ -26,6 +26,7 @@ def admin_panel_keyboard(game_finished: bool = False):
             InlineKeyboardButton("✅ Ratkaise kohde", callback_data="adm:resolve_list"),
         ],
         [
+            InlineKeyboardButton("✏️ Muuta kertoimia", callback_data="adm:odds_list"),
             InlineKeyboardButton("💰 Aseta panosrajat", callback_data="adm:limits_list"),
         ],
         [
@@ -321,6 +322,46 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Admin-paneeli", callback_data="adm:panel")]
         ]))
 
+    elif action == "odds_list":
+        all_bets = await db.get_active_bets()
+        locked_bets = [b for b in all_bets if b["status"] == "locked"]
+        eligible = []
+        for b in locked_bets:
+            count = await db.get_bet_wager_count(b["id"])
+            if count == 0:
+                eligible.append(b)
+        if not eligible:
+            await query.message.edit_text(texts.H(texts.ADMIN_NO_ODDS_BETS), reply_markup=admin_panel_keyboard())
+            return
+        keyboard = [
+            [InlineKeyboardButton(f"✏️ #{b['id']} {b['title']}", callback_data=f"adm:odds_show:{b['id']}")]
+            for b in eligible
+        ]
+        keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
+        await query.message.edit_text(texts.H(texts.ADMIN_ODDS_LIST), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif action == "odds_show":
+        bet_id = int(parts[2])
+        bet = await db.get_bet(bet_id)
+        if not bet or bet["status"] != "locked":
+            await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
+            return
+        wager_count = await db.get_bet_wager_count(bet_id)
+        if wager_count > 0:
+            await query.answer(texts.ODDS_UPDATE_FORBIDDEN, show_alert=True)
+            return
+        if bet["bet_type"] == "winner":
+            options = await db.get_bet_options(bet_id)
+            opts_str = " | ".join(f"{o['label']} @ {float(o['odds']):.2f}" for o in options)
+            msg = texts.ODDS_COPY_PASTE_WINNER.format(id=bet_id, title=bet["title"], options=opts_str)
+        else:
+            msg = texts.ODDS_COPY_PASTE_SIMPLE.format(
+                id=bet_id, title=bet["title"],
+                yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
+            )
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:odds_list")]])
+        await query.message.edit_text(texts.H(msg), reply_markup=keyboard, parse_mode="HTML")
+
     elif action == "limits_list":
         bets = await db.get_open_bets()
         if not bets:
@@ -401,6 +442,82 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif action == "reset_confirm":
         await db.reset_game()
         await query.message.edit_text(texts.H(texts.ADMIN_RESET_DONE), reply_markup=admin_panel_keyboard())
+
+
+async def cmd_update_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
+    if not ctx.args or len(ctx.args) < 2:
+        await update.message.reply_text(texts.H(texts.INVALID_ODDS_CMD_SIMPLE))
+        return
+    try:
+        bet_id = int(ctx.args[0])
+    except ValueError:
+        await update.message.reply_text(texts.H(texts.INVALID_ODDS_CMD_SIMPLE))
+        return
+
+    bet = await db.get_bet(bet_id)
+    if not bet or bet["status"] != "locked":
+        await update.message.reply_text(texts.H(texts.ODDS_UPDATE_BET_NOT_FOUND.format(id=bet_id)))
+        return
+    wager_count = await db.get_bet_wager_count(bet_id)
+    if wager_count > 0:
+        await update.message.reply_text(texts.H(texts.ODDS_UPDATE_FORBIDDEN))
+        return
+
+    rest = " ".join(ctx.args[1:])
+
+    if bet["bet_type"] == "winner":
+        raw_options = [o.strip() for o in rest.split("|") if o.strip()]
+        existing_options = await db.get_bet_options(bet_id)
+        if len(raw_options) != len(existing_options):
+            await update.message.reply_text(texts.H(texts.INVALID_ODDS_CMD_WINNER))
+            return
+        option_odds = []
+        new_odds_list = []
+        try:
+            for i, raw in enumerate(raw_options):
+                at_pos = raw.rfind("@")
+                if at_pos == -1:
+                    raise ValueError
+                new_odds = float(raw[at_pos + 1:].strip().replace(",", "."))
+                if new_odds <= 1.0:
+                    raise ValueError
+                option_odds.append((existing_options[i]["position"], new_odds))
+                new_odds_list.append((existing_options[i]["label"], new_odds))
+        except ValueError:
+            await update.message.reply_text(texts.H(texts.INVALID_ODDS_CMD_WINNER))
+            return
+        ok = await db.update_winner_bet_option_odds(bet_id, option_odds)
+        if not ok:
+            await update.message.reply_text(texts.H(texts.ODDS_UPDATE_FORBIDDEN))
+            return
+        opts_display = "\n".join(f"  {label} @ {odds:.2f}" for label, odds in new_odds_list)
+        await update.message.reply_text(texts.H(texts.ODDS_UPDATED_WINNER.format(
+            id=bet_id, title=bet["title"], options=opts_display,
+        )))
+    else:
+        parts = rest.split()
+        if len(parts) != 2:
+            await update.message.reply_text(texts.H(texts.INVALID_ODDS_CMD_SIMPLE))
+            return
+        try:
+            yes_odds = float(parts[0].replace(",", "."))
+            no_odds = float(parts[1].replace(",", "."))
+            if yes_odds <= 1.0 or no_odds <= 1.0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(texts.H(texts.INVALID_ODDS))
+            return
+        ok = await db.update_simple_bet_odds(bet_id, yes_odds, no_odds)
+        if not ok:
+            await update.message.reply_text(texts.H(texts.ODDS_UPDATE_FORBIDDEN))
+            return
+        await update.message.reply_text(texts.H(texts.ODDS_UPDATED_SIMPLE.format(
+            id=bet_id, title=bet["title"], yes_odds=yes_odds, no_odds=no_odds,
+        )))
 
 
 async def _finish_game(update):

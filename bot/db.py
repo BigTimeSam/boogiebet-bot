@@ -131,6 +131,40 @@ async def create_winner_bet(title: str, options: list, created_by: int):
             return result
 
 
+async def get_bet_wager_count(bet_id: int) -> int:
+    pool = await get_pool()
+    return await pool.fetchval("SELECT COUNT(*) FROM wagers WHERE bet_id = $1", bet_id)
+
+
+async def update_simple_bet_odds(bet_id: int, yes_odds: float, no_odds: float) -> bool:
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE bets SET yes_odds = $1, no_odds = $2 "
+        "WHERE id = $3 AND status = 'locked' AND bet_type = 'simple'",
+        yes_odds, no_odds, bet_id,
+    )
+    return result == "UPDATE 1"
+
+
+async def update_winner_bet_option_odds(bet_id: int, option_odds: list) -> bool:
+    """Update odds for winner bet options by position. option_odds: list of (position, new_odds)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            check = await conn.fetchval(
+                "SELECT COUNT(*) FROM bets WHERE id = $1 AND status = 'locked' AND bet_type = 'winner'",
+                bet_id,
+            )
+            if not check:
+                return False
+            for position, new_odds in option_odds:
+                await conn.execute(
+                    "UPDATE bet_options SET odds = $1 WHERE bet_id = $2 AND position = $3",
+                    new_odds, bet_id, position,
+                )
+    return True
+
+
 async def set_bet_wager_limits(bet_id: int, min_wager: float, max_wager: float):
     pool = await get_pool()
     result = await pool.execute(

@@ -53,6 +53,7 @@ def main():
     app.add_handler(CommandHandler("lukitse", admin.cmd_lock))
     app.add_handler(CommandHandler("ratkaise", admin.cmd_resolve))
     app.add_handler(CommandHandler("lopeta", admin.cmd_finish_confirm))
+    app.add_handler(CommandHandler("kertoimet", admin.cmd_update_odds))
 
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(admin.admin_callback, pattern=r"^adm:"))
