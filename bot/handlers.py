@@ -10,6 +10,7 @@ AWAITING_BET_TITLE = "awaiting_bet_title"
 AWAITING_BET_TYPE = "awaiting_bet_type"
 AWAITING_BET_ODDS = "awaiting_bet_odds"
 AWAITING_WINNER_OPTIONS = "awaiting_winner_options"
+AWAITING_WAGER_LIMITS = "awaiting_wager_limits"
 
 MIN_WAGER = 20.0
 MAX_WAGER = 200.0
@@ -340,24 +341,26 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     existing_amount = int(float(existing["amount"])) if existing else 0
-    remaining = int(MAX_WAGER) - existing_amount
+    bet_max = int(float(bet["max_wager"]))
+    bet_min = float(bet["min_wager"])
+    remaining = bet_max - existing_amount
     if existing and remaining <= 0:
-        await query.answer(f"Olet jo panostanut maksimin ({int(MAX_WAGER)} €) tähän kohteeseen.", show_alert=True)
+        await query.answer(f"Olet jo panostanut maksimin ({bet_max} €) tähän kohteeseen.", show_alert=True)
         return
-    if not existing and float(user["balance"]) < MIN_WAGER:
+    if not existing and float(user["balance"]) < bet_min:
         await query.answer(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"])), show_alert=True)
         return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
     await query.answer()
     ctx.user_data["state"] = AWAITING_AMOUNT
-    ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": side}
+    ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": side, "min_wager": bet_min, "max_wager": float(bet_max)}
 
     await query.message.reply_text(
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=side_fi, odds=odds,
             balance=float(user["balance"]), existing=existing_info,
-            min=MIN_WAGER, max=MAX_WAGER,
+            min=bet_min, max=bet_max,
         )),
         reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
     )
@@ -406,24 +409,26 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     existing_amount = int(float(existing["amount"])) if existing else 0
-    remaining = int(MAX_WAGER) - existing_amount
+    bet_max = int(float(bet["max_wager"]))
+    bet_min = float(bet["min_wager"])
+    remaining = bet_max - existing_amount
     if existing and remaining <= 0:
-        await query.answer(f"Olet jo panostanut maksimin ({int(MAX_WAGER)} €) tähän kohteeseen.", show_alert=True)
+        await query.answer(f"Olet jo panostanut maksimin ({bet_max} €) tähän kohteeseen.", show_alert=True)
         return
-    if not existing and float(user["balance"]) < MIN_WAGER:
+    if not existing and float(user["balance"]) < bet_min:
         await query.answer(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"])), show_alert=True)
         return
     existing_info = f"\n(Nykyinen panoksesi: {existing_amount} €, voit lisätä enintään {remaining} €)" if existing else ""
 
     await query.answer()
     ctx.user_data["state"] = AWAITING_AMOUNT
-    ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id}
+    ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id, "min_wager": bet_min, "max_wager": float(bet_max)}
 
     await query.message.reply_text(
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=option["label"],
             odds=float(option["odds"]), balance=float(user["balance"]),
-            existing=existing_info, min=MIN_WAGER, max=MAX_WAGER,
+            existing=existing_info, min=bet_min, max=bet_max,
         )),
         reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
     )
@@ -465,6 +470,8 @@ async def text_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _handle_bet_odds(update, ctx)
     elif state == AWAITING_WINNER_OPTIONS:
         await _handle_winner_options(update, ctx)
+    elif state == AWAITING_WAGER_LIMITS:
+        await _handle_wager_limits(update, ctx)
 
 
 async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -486,6 +493,8 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     user = await db.get_user(update.effective_user.id)
     option_id = pending.get("option_id")
+    bet_min = pending.get("min_wager", MIN_WAGER)
+    bet_max = pending.get("max_wager", MAX_WAGER)
     retryable = await _process_wager(
         update.message, user, pending["bet_id"], pending["side"], amount,
         is_admin=user["is_admin"], option_id=option_id,
@@ -493,7 +502,7 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if retryable:
         await update.message.reply_text(
             reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
-            text=texts.H(f"Syötä vetosumma euroissa ({int(MIN_WAGER)}–{int(MAX_WAGER)} €):"),
+            text=texts.H(f"Syötä vetosumma euroissa ({int(bet_min)}–{int(bet_max)} €):"),
         )
     else:
         ctx.user_data.pop("state", None)
@@ -591,6 +600,48 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
+async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    pending = ctx.user_data.get(AWAITING_WAGER_LIMITS)
+    if not pending:
+        ctx.user_data.pop("state", None)
+        return
+
+    parts = update.message.text.strip().replace(",", ".").split()
+    try:
+        if len(parts) != 2:
+            raise ValueError
+        new_min = float(parts[0])
+        new_max = float(parts[1])
+        if new_min != int(new_min) or new_max != int(new_max):
+            raise ValueError
+        new_min = float(int(new_min))
+        new_max = float(int(new_max))
+        if new_min < MIN_WAGER or new_max > MAX_WAGER or new_min >= new_max:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(
+            texts.H(texts.INVALID_WAGER_LIMITS),
+            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 50 150"),
+        )
+        return
+
+    bet_id = pending["bet_id"]
+    updated = await db.set_bet_wager_limits(bet_id, new_min, new_max)
+
+    ctx.user_data.pop("state", None)
+    ctx.user_data.pop(AWAITING_WAGER_LIMITS, None)
+
+    user = await db.get_user(update.effective_user.id)
+    bet = await db.get_bet(bet_id)
+    if not updated or not bet:
+        await update.message.reply_text(texts.H("❌ Panosrajojen asetus epäonnistui. Kohde ei ehkä ole enää auki."), reply_markup=await _main_keyboard(user))
+        return
+
+    await update.message.reply_text(
+        texts.H(texts.WAGER_LIMITS_SET.format(id=bet_id, title=bet["title"], min=new_min, max=new_max)),
+        reply_markup=await _main_keyboard(user),
+    )
+
 async def _process_wager(message, user, bet_id: int, side: str, amount: float,
                          is_admin=False, option_id: int = None):
     """Returns True if a retryable validation error occurred, False otherwise."""
@@ -609,14 +660,21 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
         await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)))
         return True
 
+    bet_min = float(bet["min_wager"])
+    bet_max = float(bet["max_wager"])
+
+    if amount < bet_min:
+        await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=bet_min, max=bet_max)))
+        return True
+
     existing = await db.get_user_wager(user["id"], bet_id)
     existing_amount = float(existing["amount"]) if existing else 0.0
     new_total = existing_amount + amount
 
-    if new_total > MAX_WAGER:
-        remaining = int(MAX_WAGER - existing_amount)
+    if new_total > bet_max:
+        remaining = int(bet_max - existing_amount)
         await message.reply_text(texts.H(
-            f"❌ Panosten maksimi on {int(MAX_WAGER)} € per kohde. "
+            f"❌ Panosten maksimi on {int(bet_max)} € per kohde. "
             f"Sinulla on jo {int(existing_amount)} € panostettuna — voit lisätä enintään {remaining} €."
         ))
         return True
@@ -686,6 +744,10 @@ async def _build_bets(user):
 
                 for row in _option_rows(options, _make_btn):
                     keyboard.append(row)
+                keyboard.append([InlineKeyboardButton(
+                    f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
+                    callback_data=f"noop:{b['id']}",
+                )])
         else:
             if not game_done:
                 lock_prefix = "" if is_open else "🔒 "
@@ -695,6 +757,10 @@ async def _build_bets(user):
                     InlineKeyboardButton(f"{'🎯 ' if my_side == 'yes' else ''}Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
                     InlineKeyboardButton(f"{'🎯 ' if my_side == 'no' else ''}Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
                 ])
+                keyboard.append([InlineKeyboardButton(
+                    f"💰 min {int(float(b['min_wager']))} € – max {int(float(b['max_wager']))} €",
+                    callback_data=f"noop:{b['id']}",
+                )])
 
     keyboard.append(bottom_row)
     return msg, InlineKeyboardMarkup(keyboard)

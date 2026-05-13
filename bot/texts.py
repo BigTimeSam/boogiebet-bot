@@ -211,3 +211,19 @@ ADMIN_RESET_CONFIRM = (
 )
 
 ADMIN_RESET_DONE = "✅ Peli nollattu! Kaikki käyttäjät, vetokohteet ja vedot poistettu."
+
+ASK_WAGER_LIMITS = (
+    "#{id} {title}\n\n"
+    "Nykyiset panosrajat: min {min:.0f} € – max {max:.0f} €\n\n"
+    "Syötä uudet rajat välilyönnillä erotettuna:\n"
+    "<min> <max>\n\n"
+    "esim.  50 150"
+)
+
+WAGER_LIMITS_SET = "✅ Panosrajat asetettu!\n#{id} {title}\nMin: {min:.0f} € – Max: {max:.0f} €"
+
+INVALID_WAGER_LIMITS = (
+    "❌ Tarkista panosrajat.\n"
+    "Min täytyy olla vähintään 20 € ja max enintään 200 €, ja min < max.\n\n"
+    "esim.  50 150"
+)

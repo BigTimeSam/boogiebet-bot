@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS bets (
     bet_type    VARCHAR(10) NOT NULL DEFAULT 'simple', -- simple | winner
     status      VARCHAR(20) DEFAULT 'open',            -- open | locked | resolved
     result      TEXT,                                  -- yes | no | option_id (winner)
+    min_wager   NUMERIC(6,2) NOT NULL DEFAULT 20,
+    max_wager   NUMERIC(6,2) NOT NULL DEFAULT 200,
     created_by  INTEGER REFERENCES users(id),
     created_at  TIMESTAMP DEFAULT NOW()
 );

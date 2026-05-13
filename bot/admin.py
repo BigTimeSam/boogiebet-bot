@@ -1,8 +1,9 @@
 import os
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from telegram.ext import ContextTypes
 import db
 import texts
+from handlers import AWAITING_WAGER_LIMITS
 
 
 def _password():
@@ -23,6 +24,9 @@ def admin_panel_keyboard(game_finished: bool = False):
         [
             InlineKeyboardButton("🔒 Lukitse/vapauta kohde", callback_data="adm:lock_list"),
             InlineKeyboardButton("✅ Ratkaise kohde", callback_data="adm:resolve_list"),
+        ],
+        [
+            InlineKeyboardButton("💰 Aseta panosrajat", callback_data="adm:limits_list"),
         ],
         [
             InlineKeyboardButton("🏁 Lopeta peli", callback_data="adm:finish"),
@@ -316,6 +320,40 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(msg), reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Admin-paneeli", callback_data="adm:panel")]
         ]))
+
+    elif action == "limits_list":
+        bets = await db.get_open_bets()
+        if not bets:
+            await query.message.edit_text(texts.H("Ei avoimia kohteita."), reply_markup=admin_panel_keyboard())
+            return
+        keyboard = [
+            [InlineKeyboardButton(
+                f"#{b['id']} {b['title']} ({int(float(b['min_wager']))}–{int(float(b['max_wager']))} €)",
+                callback_data=f"adm:limits_set:{b['id']}",
+            )]
+            for b in bets
+        ]
+        keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
+        await query.message.edit_text(texts.H("💰 Valitse kohde jonka panosrajat haluat muuttaa:"), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif action == "limits_set":
+        bet_id = int(parts[2])
+        bet = await db.get_bet(bet_id)
+        if not bet:
+            await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
+            return
+        if bet["status"] != "open":
+            await query.answer("Vain avoimien kohteiden rajoja voi muuttaa.", show_alert=True)
+            return
+        ctx.user_data["state"] = AWAITING_WAGER_LIMITS
+        ctx.user_data[AWAITING_WAGER_LIMITS] = {"bet_id": bet_id}
+        await query.message.reply_text(
+            texts.H(texts.ASK_WAGER_LIMITS.format(
+                id=bet_id, title=bet["title"],
+                min=float(bet["min_wager"]), max=float(bet["max_wager"]),
+            )),
+            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 50 150"),
+        )
 
     elif action == "finish":
         if await db.is_game_finished():

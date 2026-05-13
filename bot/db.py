@@ -30,6 +30,12 @@ async def _migrate(pool):
         await conn.execute(
             "ALTER TABLE wagers ADD COLUMN IF NOT EXISTS option_id INTEGER REFERENCES bet_options(id)"
         )
+        await conn.execute(
+            "ALTER TABLE bets ADD COLUMN IF NOT EXISTS min_wager NUMERIC(6,2) NOT NULL DEFAULT 20"
+        )
+        await conn.execute(
+            "ALTER TABLE bets ADD COLUMN IF NOT EXISTS max_wager NUMERIC(6,2) NOT NULL DEFAULT 200"
+        )
 
 
 async def get_pool():
@@ -123,6 +129,15 @@ async def create_winner_bet(title: str, options: list, created_by: int):
             result = dict(bet)
             result["options"] = opt_rows
             return result
+
+
+async def set_bet_wager_limits(bet_id: int, min_wager: float, max_wager: float):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE bets SET min_wager = $1, max_wager = $2 WHERE id = $3 AND status = 'open'",
+        min_wager, max_wager, bet_id,
+    )
+    return result == "UPDATE 1"
 
 
 async def delete_bet(bet_id: int):
