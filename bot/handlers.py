@@ -1,3 +1,4 @@
+import math
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from telegram.ext import ContextTypes
 import db
@@ -12,6 +13,19 @@ AWAITING_WINNER_OPTIONS = "awaiting_winner_options"
 
 MIN_WAGER = 20.0
 MAX_WAGER = 200.0
+MAX_WINNER_OPTIONS = 6
+
+
+def _option_rows(options, btn_maker):
+    """Split options into keyboard rows: ≤3 → one row, 4 → 2+2, 5 → 3+2, 6 → 3+3."""
+    n = len(options)
+    if n <= 3:
+        return [[btn_maker(o) for o in options]]
+    split = math.ceil(n / 2)
+    return [
+        [btn_maker(o) for o in options[:split]],
+        [btn_maker(o) for o in options[split:]],
+    ]
 
 
 def main_menu_keyboard(is_admin=False, game_done=False, has_winners=False):
@@ -559,6 +573,10 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(texts.H(texts.INVALID_WINNER_OPTIONS))
         return
 
+    if len(options) > MAX_WINNER_OPTIONS:
+        await update.message.reply_text(texts.H(texts.TOO_MANY_WINNER_OPTIONS.format(max=MAX_WINNER_OPTIONS)))
+        return
+
     ctx.user_data.pop("state", None)
     ctx.user_data.pop(AWAITING_WINNER_OPTIONS, None)
 
@@ -654,18 +672,20 @@ async def _build_bets(user):
 
         if b["bet_type"] == "winner":
             options = await db.get_bet_options(b["id"])
-            my_option_id = w.get("option_id") if w else None
             prefix = "" if is_open else "🔒 "
             title_text = f"{prefix}🏆 #{b['id']} {b['title']}"
             keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
             if not game_done:
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"{'🎯 ' if o['id'] == my_option_id else ''}{o['label']} @ {float(o['odds']):.2f}",
-                        callback_data=f"opt:{b['id']}:{o['id']}",
+                my_option_id = w.get("option_id") if w else None
+
+                def _make_btn(o, _my_id=my_option_id, _bid=b["id"]):
+                    return InlineKeyboardButton(
+                        f"{'🎯 ' if o['id'] == _my_id else ''}{o['label']} @ {float(o['odds']):.2f}",
+                        callback_data=f"opt:{_bid}:{o['id']}",
                     )
-                    for o in options[:4]
-                ])
+
+                for row in _option_rows(options, _make_btn):
+                    keyboard.append(row)
         else:
             if not game_done:
                 lock_prefix = "" if is_open else "🔒 "

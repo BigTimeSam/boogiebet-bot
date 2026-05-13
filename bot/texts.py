@@ -155,6 +155,7 @@ ASK_WINNER_OPTIONS = (
     "Kohde: {title}\n\n"
     "Syötä vaihtoehdot putkimerkillä erotettuna muodossa:\n"
     "Nimi @ kerroin | Nimi @ kerroin | ...\n\n"
+    "Vähintään 2, enintään 6 vaihtoehtoa.\n\n"
     "esim.\n"
     "Osmo & Markulov @ 2.80 | Zyrk & Kipe @ 2.50 | Damu & Koala @ 3.00 | Johkis & Winkzi @ 2.75"
 )
@@ -165,6 +166,8 @@ INVALID_WINNER_OPTIONS = (
     "esim.\n"
     "Osmo & Markulov @ 2.80 | Zyrk & Kipe @ 2.50 | Damu & Koala @ 3.00 | Johkis & Winkzi @ 2.75"
 )
+
+TOO_MANY_WINNER_OPTIONS = "❌ Voittajavedossa voi olla enintään {max} vaihtoehtoa."
 
 WINNER_BET_CREATED = "✅ Voittajaveto luotu!\n\n#{id}: {title}\n\n{options}"
 

@@ -126,7 +126,7 @@ open → locked → resolved
 
 **Kyllä/Ei** (`simple`): pelaaja valitsee Kyllä- tai Ei-puolen, molemmat saavat omat kertoimensa.
 
-**Voittajaveto** (`winner`): kaksi tai useampi nimetty vaihtoehto omilla kertoimillaan. Pelaaja valitsee yhden vaihtoehdon.
+**Voittajaveto** (`winner`): kaksi tai useampi nimetty vaihtoehto omilla kertoimillaan. Pelaaja valitsee yhden vaihtoehdon. Enintään 6 vaihtoehtoa per kohde — 3 tai alle näytetään yhdellä rivillä, 4–6 kahdella rivillä (3+2 tai 3+3).
 
 #### Voiton laskenta
 
