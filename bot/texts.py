@@ -3,7 +3,8 @@ import functools
 
 _HEADER_TEMPLATE = (
     "🎰 boogieBet {version} – On aika selvittää, kuka tietää ja kuka ei (vaikka proffahan sen tietää).\n"
-    "Sinulla on käytössäsi 1000 €, jotka tulee panostaa eri kohteisiin. Minimipanos on 20 € ja maksimipanos 200 € per kohde. Kaikkia rahoja ei ole pakko panostaa, ja voit vaihtaa mielipidettäsi, mutta jo lyödyn vedon cashout palauttaa vain 95 % rahoista takaisin saldoon. Onnea matkaan ja kepulein voittakoon! 🍀"
+    "Sinulla on käytössäsi 1000 €, jotka tulee panostaa eri kohteisiin. Minimipanos on 20 € ja maksimipanos 200 € per kohde. Kaikkia rahoja ei ole pakko panostaa, ja voit vaihtaa mielipidettäsi, mutta jo lyödyn vedon cashout palauttaa vain 95 % rahoista takaisin saldoon. Onnea matkaan ja kepulein voittakoon! 🍀\n\n"
+    "⚠️ Lanien aikana julkaistaan uusia kohteita ja mm. kaikista CS2- ja Dota-matseista on tarkoitus tulla omat vetokohteensa. Muistathan siis jättää myös vapaata saldoa, jotta voit osallistua näihin eivätkä kaikki rahasi ole jumissa koko lanien pituisissa vedoissa."
 )
 
 
