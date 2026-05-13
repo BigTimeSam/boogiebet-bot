@@ -1,9 +1,9 @@
 import os
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 import db
 import texts
-from handlers import AWAITING_WAGER_LIMITS
+from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard
 
 
 def _password():
@@ -393,7 +393,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 id=bet_id, title=bet["title"],
                 min=float(bet["min_wager"]), max=float(bet["max_wager"]),
             )),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 50 150"),
+            reply_markup=_cancel_keyboard(),
         )
 
     elif action == "finish":

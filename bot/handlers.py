@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 import db
 import texts
@@ -51,11 +51,18 @@ def back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")]])
 
 
+def _cancel_keyboard():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Peruuta", callback_data="input:cancel")]])
+
+
 def _bet_type_keyboard():
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("⚖️ Kyllä / Ei", callback_data="bet_type:simple"),
-        InlineKeyboardButton("🏆 Voittajaveto", callback_data="bet_type:winner"),
-    ]])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚖️ Kyllä / Ei", callback_data="bet_type:simple"),
+            InlineKeyboardButton("🏆 Voittajaveto", callback_data="bet_type:winner"),
+        ],
+        [InlineKeyboardButton("❌ Peruuta", callback_data="input:cancel")],
+    ])
 
 
 async def _main_text(user, name: str = None, is_new: bool = False) -> str:
@@ -291,7 +298,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["state"] = AWAITING_BET_TITLE
         await query.message.reply_text(
             texts.H(texts.ASK_BET_TITLE),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. Lanimestaruuden voittava kapteenipari?"),
+            reply_markup=_cancel_keyboard(),
         )
 
 
@@ -310,14 +317,14 @@ async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data[AWAITING_BET_ODDS] = {"title": title}
         await query.message.reply_text(
             texts.H(texts.ASK_BET_ODDS.format(title=title)),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 3.50 1.25"),
+            reply_markup=_cancel_keyboard(),
         )
     elif bet_type == "winner":
         ctx.user_data["state"] = AWAITING_WINNER_OPTIONS
         ctx.user_data[AWAITING_WINNER_OPTIONS] = {"title": title}
         await query.message.reply_text(
             texts.H(texts.ASK_WINNER_OPTIONS.format(title=title)),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. Osmo & Markulov @ 2.80 | Zyrk & Kipe @ 2.50 | Damu & Koala @ 3.00 | Johkis & Winkzi @ 2.75"),
+            reply_markup=_cancel_keyboard(),
         )
 
 
@@ -382,7 +389,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             balance=float(user["balance"]), existing=existing_info,
             amount_hint=amount_hint,
         )),
-        reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
+        reply_markup=_cancel_keyboard(),
     )
 
 
@@ -451,7 +458,7 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             odds=float(option["odds"]), balance=float(user["balance"]),
             existing=existing_info, amount_hint=amount_hint,
         )),
-        reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
+        reply_markup=_cancel_keyboard(),
     )
 
 
@@ -477,6 +484,22 @@ async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(query.from_user.id)
     text, keyboard = await _build_my_bets(user)
     await query.message.edit_text(texts.H(text), reply_markup=keyboard)
+
+
+async def cancel_input_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    state = ctx.user_data.pop("state", None)
+    for key in (AWAITING_AMOUNT, AWAITING_BET_TITLE, AWAITING_BET_ODDS,
+                AWAITING_BET_TYPE, AWAITING_WINNER_OPTIONS, AWAITING_WAGER_LIMITS):
+        ctx.user_data.pop(key, None)
+
+    creation_states = (AWAITING_BET_TITLE, AWAITING_BET_ODDS, AWAITING_BET_TYPE, AWAITING_WINNER_OPTIONS)
+    msg = texts.CANCEL_CREATION if state in creation_states else "❌ Peruutettu."
+
+    user = await db.get_user(query.from_user.id)
+    await query.message.edit_text(texts.H(msg), reply_markup=await _main_keyboard(user))
 
 
 # ── Text message router ────────────────────────────────────────────────────────
@@ -508,7 +531,7 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text(
             texts.H(texts.INVALID_AMOUNT),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
+            reply_markup=_cancel_keyboard(),
         )
         return
 
@@ -523,7 +546,7 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if retryable:
         amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
         await update.message.reply_text(
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 100"),
+            reply_markup=_cancel_keyboard(),
             text=texts.H(f"Syötä vetosumma euroissa ({amount_hint}):"),
         )
     else:
@@ -536,7 +559,7 @@ async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not title:
         await update.message.reply_text(
             texts.H(texts.ASK_BET_TITLE),
-            reply_markup=ForceReply(selective=True),
+            reply_markup=_cancel_keyboard(),
         )
         return
 
@@ -645,7 +668,7 @@ async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text(
             texts.H(texts.INVALID_WAGER_LIMITS),
-            reply_markup=ForceReply(selective=True, input_field_placeholder="esim. 50 150"),
+            reply_markup=_cancel_keyboard(),
         )
         return
 
