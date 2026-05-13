@@ -39,6 +39,9 @@ async def _migrate(pool):
         await conn.execute(
             "ALTER TABLE bets ADD COLUMN IF NOT EXISTS weight INTEGER NOT NULL DEFAULT 0"
         )
+        await conn.execute(
+            "ALTER TABLE bets ADD COLUMN IF NOT EXISTS opened_once BOOLEAN NOT NULL DEFAULT FALSE"
+        )
 
 
 async def get_pool():
@@ -105,8 +108,8 @@ async def get_bet_options(bet_id: int):
 async def create_bet(title: str, yes_odds: float, no_odds: float, created_by: int):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "INSERT INTO bets (title, yes_odds, no_odds, bet_type, created_by) "
-        "VALUES ($1, $2, $3, 'simple', $4) RETURNING *",
+        "INSERT INTO bets (title, yes_odds, no_odds, bet_type, created_by, status) "
+        "VALUES ($1, $2, $3, 'simple', $4, 'locked') RETURNING *",
         title, yes_odds, no_odds, created_by,
     )
     return dict(row)
@@ -117,8 +120,8 @@ async def create_winner_bet(title: str, options: list, created_by: int):
     async with pool.acquire() as conn:
         async with conn.transaction():
             bet = await conn.fetchrow(
-                "INSERT INTO bets (title, yes_odds, no_odds, bet_type, created_by) "
-                "VALUES ($1, 0, 0, 'winner', $2) RETURNING *",
+                "INSERT INTO bets (title, yes_odds, no_odds, bet_type, created_by, status) "
+                "VALUES ($1, 0, 0, 'winner', $2, 'locked') RETURNING *",
                 title, created_by,
             )
             opt_rows = []
@@ -218,11 +221,21 @@ async def lock_bet(bet_id: int):
 
 
 async def unlock_bet(bet_id: int):
+    """Unlock a locked bet. Returns (success, is_first_open) where is_first_open is True
+    if this is the first time this bet has ever been opened."""
     pool = await get_pool()
-    result = await pool.execute(
-        "UPDATE bets SET status = 'open' WHERE id = $1 AND status = 'locked'", bet_id
+    row = await pool.fetchrow(
+        """
+        WITH prev AS (SELECT opened_once FROM bets WHERE id = $1 AND status = 'locked')
+        UPDATE bets SET status = 'open', opened_once = TRUE
+        WHERE id = $1 AND status = 'locked'
+        RETURNING (SELECT NOT opened_once FROM prev) AS is_first_open
+        """,
+        bet_id,
     )
-    return result == "UPDATE 1"
+    if row is None:
+        return False, False
+    return True, bool(row["is_first_open"])
 
 
 async def resolve_bet(bet_id: int, result: str):

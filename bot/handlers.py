@@ -600,7 +600,6 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )),
         reply_markup=await _main_keyboard(user),
     )
-    await _broadcast_new_bet(ctx.bot, bet)
 
 
 async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -642,7 +641,6 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         texts.H(texts.WINNER_BET_CREATED.format(id=bet["id"], title=bet["title"], options=options_text)),
         reply_markup=await _main_keyboard(user),
     )
-    await _broadcast_new_bet(ctx.bot, bet, options=bet["options"])
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────

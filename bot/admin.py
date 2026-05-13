@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 import db
 import texts
-from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard
+from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard, _broadcast_new_bet
 
 
 def _password():
@@ -229,8 +229,15 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.answer(texts.BET_RESOLVED.format(id=bet_id), show_alert=True)
             return
         if bet["status"] == "locked":
-            await db.unlock_bet(bet_id)
+            success, is_first_open = await db.unlock_bet(bet_id)
             await query.answer(f"🔓 Kohde #{bet_id} vapautettu!")
+            if is_first_open:
+                bet = await db.get_bet(bet_id)
+                if bet["bet_type"] == "winner":
+                    options = await db.get_bet_options(bet_id)
+                    await _broadcast_new_bet(query.message.get_bot(), bet, options=options)
+                else:
+                    await _broadcast_new_bet(query.message.get_bot(), bet)
         else:
             await db.lock_bet(bet_id)
             await query.answer(f"🔒 Kohde #{bet_id} lukittu!")
