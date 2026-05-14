@@ -878,17 +878,17 @@ async def _build_my_bets(user):
         amount = float(w["amount"])
         payout = amount * odds
         if w["status"] == "open":
-            icon, extra = "🎯", f" (mahdollinen voitto {payout:.0f} €)"
+            icon, extra, title_suffix = "🎯", f" (mahdollinen voitto {payout:.0f} €)", ""
         elif w["status"] == "locked":
-            icon, extra = "🔒", f" (mahdollinen voitto {payout:.0f} €)"
+            icon, extra, title_suffix = "🎯", f" (mahdollinen voitto {payout:.0f} €)", " 🔒"
         elif won:
             profit = amount * odds
-            icon, extra = "🏆", f" (+{profit:.0f} €)"
+            icon, extra, title_suffix = "🏆", f" (+{profit:.0f} €)", ""
         else:
-            icon, extra = "❌", f" (-{amount:.0f} €)"
+            icon, extra, title_suffix = "❌", f" (-{amount:.0f} €)", ""
 
         msg += texts.WAGER_ROW.format(
-            bet_id=w["bet_id"], title=w["title"], side=side_fi,
+            bet_id=w["bet_id"], title=w["title"], title_suffix=title_suffix, side=side_fi,
             amount=amount, odds=odds, icon=icon, extra=extra,
         )
         if w["status"] == "open":
