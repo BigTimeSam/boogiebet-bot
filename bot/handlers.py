@@ -707,7 +707,7 @@ async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     bet = await db.get_bet(bet_id)
     if not updated or not bet:
-        await update.message.reply_text(texts.H("❌ Panosrajojen asetus epäonnistui. Kohde ei ehkä ole enää auki."), reply_markup=await _main_keyboard(user))
+        await update.message.reply_text(texts.H("❌ Panosrajojen asetus epäonnistui. Kohde ei ehkä ole enää muokattavissa."), reply_markup=await _main_keyboard(user))
         return
 
     await update.message.reply_text(

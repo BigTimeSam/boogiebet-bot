@@ -374,13 +374,14 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(msg), reply_markup=keyboard, parse_mode="HTML")
 
     elif action == "limits_list":
-        bets = await db.get_open_bets()
+        all_bets = await db.get_active_bets()
+        bets = [b for b in all_bets if b["status"] in ("open", "locked")]
         if not bets:
-            await query.message.edit_text(texts.H("Ei avoimia kohteita."), reply_markup=admin_panel_keyboard())
+            await query.message.edit_text(texts.H("Ei avoimia tai lukittuja kohteita."), reply_markup=admin_panel_keyboard())
             return
         keyboard = [
             [InlineKeyboardButton(
-                f"#{b['id']} {b['title']} ({int(float(b['min_wager']))}–{int(float(b['max_wager']))} €)",
+                f"{'🔒 ' if b['status'] == 'locked' else ''}#{b['id']} {b['title']} ({int(float(b['min_wager']))}–{int(float(b['max_wager']))} €)",
                 callback_data=f"adm:limits_set:{b['id']}",
             )]
             for b in bets
@@ -394,8 +395,8 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not bet:
             await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
             return
-        if bet["status"] != "open":
-            await query.answer("Vain avoimien kohteiden rajoja voi muuttaa.", show_alert=True)
+        if bet["status"] not in ("open", "locked"):
+            await query.answer("Vain avoimien tai lukittujen kohteiden rajoja voi muuttaa.", show_alert=True)
             return
         ctx.user_data["state"] = AWAITING_WAGER_LIMITS
         ctx.user_data[AWAITING_WAGER_LIMITS] = {"bet_id": bet_id}

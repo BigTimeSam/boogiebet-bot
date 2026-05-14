@@ -189,7 +189,7 @@ async def update_winner_bet_option_odds(bet_id: int, option_odds: list) -> bool:
 async def set_bet_wager_limits(bet_id: int, min_wager: float, max_wager: float):
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE bets SET min_wager = $1, max_wager = $2 WHERE id = $3 AND status = 'open'",
+        "UPDATE bets SET min_wager = $1, max_wager = $2 WHERE id = $3 AND status IN ('open', 'locked')",
         min_wager, max_wager, bet_id,
     )
     return result == "UPDATE 1"
