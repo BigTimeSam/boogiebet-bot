@@ -303,8 +303,11 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = await _build_leaderboard()
         await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
     elif action == "voittajat":
-        text = await _build_winners()
-        await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
+        chunks = await _build_winners()
+        await query.message.edit_text(texts.H(chunks[0]), reply_markup=None if len(chunks) > 1 else back_keyboard())
+        for i, chunk in enumerate(chunks[1:], 1):
+            is_last = i == len(chunks) - 1
+            await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
     elif action == "pnl":
         text = await _build_realized_pnl_all()
         await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
@@ -903,10 +906,10 @@ async def _build_my_bets(user):
     return msg, InlineKeyboardMarkup(keyboard)
 
 
-async def _build_winners():
+async def _build_winners() -> list[str]:
     rows = await db.get_resolved_bets_with_winners()
     if not rows:
-        return texts.WINNERS_NO_RESOLVED
+        return [texts.WINNERS_NO_RESOLVED]
 
     # Group rows by bet
     bets_seen: list[int] = []
@@ -918,7 +921,8 @@ async def _build_winners():
             by_bet[bid] = []
         by_bet[bid].append(r)
 
-    msg = texts.WINNERS_HEADER
+    # Build per-bet text blocks
+    blocks: list[str] = []
     for bid in bets_seen:
         wagers = by_bet[bid]
         first = wagers[0]
@@ -927,7 +931,7 @@ async def _build_winners():
             result_label = winning_row["option_label"] if winning_row else f"#{first['result']}"
         else:
             result_label = "Kyllä" if first["result"] == "yes" else "Ei"
-        msg += texts.WINNERS_BET_SECTION.format(id=bid, title=first["title"], result=result_label)
+        block = texts.WINNERS_BET_SECTION.format(id=bid, title=first["title"], result=result_label)
 
         winners = []
         losers = []
@@ -948,25 +952,31 @@ async def _build_winners():
 
         if winners:
             winners.sort(key=lambda x: x[0].lower())
-            parts = [f"{name} (+{profit:,.0f} €)".replace(",", " ") for name, profit in winners]
-            msg += "🏆 " + ", ".join(parts) + "\n"
+            parts = [f"{name} (+{profit:,.0f} \u20ac)".replace(",", "\u202f") for name, profit in winners]
+            block += "\U0001f3c6 " + ", ".join(parts) + "\n"
         elif not losers:
-            msg += texts.WINNERS_NO_PLAYERS
+            block += texts.WINNERS_NO_PLAYERS
 
         if losers:
             losers.sort(key=lambda x: x[0].lower())
-            parts = [f"{name} (-{amount:,.0f} €)".replace(",", " ") for name, amount in losers]
-            msg += "🚫 " + ", ".join(parts) + "\n"
+            parts = [f"{name} (-{amount:,.0f} \u20ac)".replace(",", "\u202f") for name, amount in losers]
+            block += "\U0001f6ab " + ", ".join(parts) + "\n"
 
-        msg += "\n"
+        blocks.append(block)
 
-    msg = msg.rstrip()
-    # Telegram limit is 4096 chars; header uses ~700, leave safe margin
+    # Pack blocks into chunks that fit within Telegram's limit (header ~700 chars)
     limit = 3200
-    if len(msg) > limit:
-        msg = msg[:limit].rsplit("\n", 1)[0] + "\n\n…(lista katkaistу pituuden takia)"
-    return msg
+    chunks: list[str] = []
+    current = texts.WINNERS_HEADER
+    for block in blocks:
+        if current != texts.WINNERS_HEADER and len(current) + len(block) + 1 > limit:
+            chunks.append(current.rstrip())
+            current = texts.WINNERS_HEADER
+        current += block + "\n"
+    if current.strip() != texts.WINNERS_HEADER.strip():
+        chunks.append(current.rstrip())
 
+    return chunks if chunks else [texts.WINNERS_NO_RESOLVED]
 
 async def _build_realized_pnl_all():
     rows = await db.get_resolved_bets_with_winners()
