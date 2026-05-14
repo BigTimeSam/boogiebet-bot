@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 import db
 import texts
-from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard, _broadcast_new_bet
+from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard, _broadcast_new_bet, _broadcast_bet_resolved
 
 
 def _password():
@@ -118,9 +118,7 @@ async def cmd_resolve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         texts.WINNER_ROW.format(username=w["username"], profit=w["profit"])
         for w in winners
     ) if winners else texts.NO_WINNERS
-    await update.message.reply_text(texts.H(texts.BET_RESOLVED_MSG.format(
-        id=bet_id, title=bet["title"], result=result_fi, winners=winners_text
-    )))
+    await _broadcast_bet_resolved(update.get_bot(), bet, result_fi, winners_text)
 
 
 async def cmd_finish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -326,10 +324,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             texts.WINNER_ROW.format(username=w["username"], profit=w["profit"])
             for w in winners
         ) if winners else texts.NO_WINNERS
-        msg = texts.BET_RESOLVED_MSG.format(
+        await _broadcast_bet_resolved(query.message.get_bot(), bet, result_fi, winners_text)
+        await query.message.edit_text(texts.H(texts.BET_RESOLVED_MSG.format(
             id=bet_id, title=bet["title"], result=result_fi, winners=winners_text
-        )
-        await query.message.edit_text(texts.H(msg), reply_markup=InlineKeyboardMarkup([
+        )), reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Admin-paneeli", callback_data="adm:panel")]
         ]))
 

@@ -104,6 +104,19 @@ async def _broadcast_new_bet(bot, bet: dict, options: list = None):
             logger.debug("Could not send new-bet notification to %s", tid)
 
 
+async def _broadcast_bet_resolved(bot, bet: dict, result_fi: str, winners_text: str):
+    """Broadcast bet resolution result to all registered users."""
+    telegram_ids = await db.get_all_telegram_ids()
+    msg = texts.H(texts.BET_RESOLVED_MSG.format(
+        id=bet["id"], title=bet["title"], result=result_fi, winners=winners_text
+    ))
+    for tid in telegram_ids:
+        try:
+            await bot.send_message(chat_id=tid, text=msg)
+        except Exception:
+            logger.debug("Could not send resolution notification to %s", tid)
+
+
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg = update.effective_user
     user, created = await db.get_or_create_user(tg.id, tg.username or tg.first_name)
