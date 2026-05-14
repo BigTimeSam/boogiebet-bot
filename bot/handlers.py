@@ -850,6 +850,8 @@ async def _build_bets(user):
                 ])
 
     keyboard.append(bottom_row)
+    if not keyboard[:-1]:  # only bottom_row remains — all bets were locked
+        msg += texts.ALL_BETS_LOCKED
     return msg, InlineKeyboardMarkup(keyboard)
 
 
@@ -874,10 +876,11 @@ async def _build_my_bets(user):
             )
 
         amount = float(w["amount"])
+        payout = amount * odds
         if w["status"] == "open":
-            icon, extra = "🎯", ""
+            icon, extra = "🎯", f" (mahdollinen voitto {payout:.0f} €)"
         elif w["status"] == "locked":
-            icon, extra = "🔒", ""
+            icon, extra = "🔒", f" (mahdollinen voitto {payout:.0f} €)"
         elif won:
             profit = amount * odds
             icon, extra = "🏆", f" (+{profit:.0f} €)"

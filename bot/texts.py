@@ -28,6 +28,8 @@ BALANCE = "💰 Saldosi: {balance:.0f} €"
 
 NO_BETS = "Ei vetokohteita vielä. Tee valitus orgalle."
 
+ALL_BETS_LOCKED = "Kaikki vetokohteet ovat lukittuja eikä niihin voi enää asettaa vetoja. Seuraa tiedotuksia, kun uusia vetokohteita avataan."
+
 BET_LIST_HEADER = "🎯 = Olet panostanut kyseiseen kohteeseen tätä valintaa.\n\n📋 Vetokohteet\n\n"
 
 BET_ROW_OPEN = "#{id} {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n\n"
