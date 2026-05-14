@@ -805,6 +805,8 @@ async def _build_bets(user):
     keyboard = []
 
     for b in bets:
+        if b["status"] == "locked":
+            continue
         w = my_wagers.get(b["id"])
         is_open = b["status"] == "open"
 
