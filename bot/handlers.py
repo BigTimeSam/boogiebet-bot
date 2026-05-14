@@ -960,7 +960,12 @@ async def _build_winners():
 
         msg += "\n"
 
-    return msg.rstrip()
+    msg = msg.rstrip()
+    # Telegram limit is 4096 chars; header uses ~700, leave safe margin
+    limit = 3200
+    if len(msg) > limit:
+        msg = msg[:limit].rsplit("\n", 1)[0] + "\n\n…(lista katkaistу pituuden takia)"
+    return msg
 
 
 async def _build_realized_pnl_all():
