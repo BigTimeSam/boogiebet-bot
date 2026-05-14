@@ -35,6 +35,7 @@ def main_menu_keyboard(is_admin=False, game_done=False, has_winners=False):
     results_row = [InlineKeyboardButton("🏆 Tulostaulu", callback_data="nav:tulokset")]
     if has_winners:
         results_row.append(InlineKeyboardButton("🥇 Voittajat", callback_data="nav:voittajat"))
+    results_row.append(InlineKeyboardButton("📈 PnL", callback_data="nav:pnl"))
     rows = [top_row, results_row]
     if is_admin:
         rows.append([InlineKeyboardButton("🔧 Admin-paneeli", callback_data="adm:panel")])
@@ -303,6 +304,9 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
     elif action == "voittajat":
         text = await _build_winners()
+        await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
+    elif action == "pnl":
+        text = await _build_realized_pnl_all()
         await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
     elif action == "new_bet":
         if not user["is_admin"]:
@@ -955,6 +959,40 @@ async def _build_winners():
             msg += "🚫 " + ", ".join(parts) + "\n"
 
         msg += "\n"
+
+    return msg.rstrip()
+
+
+async def _build_realized_pnl_all():
+    rows = await db.get_resolved_bets_with_winners()
+    if not rows:
+        return "📈 Realisoitunut PnL\n\nEi vielä ratkaistuja vetoja."
+
+    by_player: dict[str, list[float]] = {}
+    for r in rows:
+        name = r["username"] or "?"
+        amount = float(r["amount"])
+        if r["bet_type"] == "winner":
+            won = str(r["option_id"]) == str(r["result"])
+            odds = float(r["option_odds"]) if r["option_odds"] else 0.0
+        else:
+            won = (r["side"] == "yes" and r["result"] == "yes") or \
+                  (r["side"] == "no" and r["result"] == "no")
+            odds = float(r["yes_odds"]) if r["side"] == "yes" else float(r["no_odds"])
+
+        pnl = amount * odds - amount if won else -amount
+        by_player.setdefault(name, []).append(pnl)
+
+    msg = "📈 Realisoitunut PnL\n\n"
+    sorted_players = sorted(by_player.items(), key=lambda x: sum(x[1]), reverse=True)
+    for name, pnls in sorted_players:
+        total = sum(pnls)
+        parts = " ".join(
+            f"+{p:.0f} €" if p >= 0 else f"{p:.0f} €"
+            for p in pnls
+        )
+        sign = "+" if total >= 0 else ""
+        msg += f"{name}: {parts} = {sign}{total:.0f} €\n"
 
     return msg.rstrip()
 
