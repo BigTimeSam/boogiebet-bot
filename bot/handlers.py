@@ -309,8 +309,11 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             is_last = i == len(chunks) - 1
             await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
     elif action == "pnl":
-        text = await _build_realized_pnl_all()
-        await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
+        chunks = await _build_realized_pnl_all()
+        await query.message.edit_text(texts.H(chunks[0]), reply_markup=None if len(chunks) > 1 else back_keyboard())
+        for i, chunk in enumerate(chunks[1:], 1):
+            is_last = i == len(chunks) - 1
+            await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
     elif action == "new_bet":
         if not user["is_admin"]:
             await query.answer(texts.NOT_ADMIN, show_alert=True)
@@ -978,10 +981,11 @@ async def _build_winners() -> list[str]:
 
     return chunks if chunks else [texts.WINNERS_NO_RESOLVED]
 
-async def _build_realized_pnl_all():
+async def _build_realized_pnl_all() -> list[str]:
+    PNL_HEADER = "📈 Realisoitunut PnL\n\n"
     rows = await db.get_resolved_bets_with_winners()
     if not rows:
-        return "📈 Realisoitunut PnL\n\nEi vielä ratkaistuja vetoja."
+        return [PNL_HEADER + "Ei vielä ratkaistuja vetoja."]
 
     by_player: dict[str, list[float]] = {}
     for r in rows:
@@ -998,8 +1002,9 @@ async def _build_realized_pnl_all():
         pnl = amount * odds - amount if won else -amount
         by_player.setdefault(name, []).append(pnl)
 
-    msg = "📈 Realisoitunut PnL\n\n"
     sorted_players = sorted(by_player.items(), key=lambda x: sum(x[1]), reverse=True)
+
+    lines: list[str] = []
     for name, pnls in sorted_players:
         total = sum(pnls)
         parts = " ".join(
@@ -1007,9 +1012,21 @@ async def _build_realized_pnl_all():
             for p in pnls
         )
         sign = "+" if total >= 0 else ""
-        msg += f"{name}: {parts} = {sign}{total:.0f} €\n"
+        lines.append(f"{name}: {parts} = {sign}{total:.0f} €")
 
-    return msg.rstrip()
+    limit = 3200
+    chunks: list[str] = []
+    current = PNL_HEADER
+    for line in lines:
+        entry = line + "\n"
+        if current != PNL_HEADER and len(current) + len(entry) > limit:
+            chunks.append(current.rstrip())
+            current = PNL_HEADER
+        current += entry
+    if current.strip() != PNL_HEADER.strip():
+        chunks.append(current.rstrip())
+
+    return chunks if chunks else [PNL_HEADER + "Ei vielä ratkaistuja vetoja."]
 
 
 async def _build_leaderboard():
