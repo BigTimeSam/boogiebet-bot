@@ -589,3 +589,28 @@ async def _finish_game(update):
         msg += texts.GAME_FINISHED_ROW.format(rank=i, username=name, balance=float(row["balance"]))
     msg += texts.GAME_FINISHED_NOTICE
     await update.message.reply_text(texts.H(msg))
+
+
+async def cmd_add_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
+    if not ctx.args or len(ctx.args) < 2:
+        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/lisaasaldo <handle> <summa>")))
+        return
+    handle = ctx.args[0].lstrip("@")
+    try:
+        amount = float(ctx.args[1].replace(",", "."))
+    except ValueError:
+        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/lisaasaldo <handle> <summa>")))
+        return
+    target = await db.get_user_by_username(handle)
+    if not target:
+        await update.message.reply_text(texts.H(f"❌ Käyttäjää '{handle}' ei löydy."))
+        return
+    await db.add_balance(target["id"], amount)
+    sign = "+" if amount >= 0 else ""
+    await update.message.reply_text(texts.H(
+        f"✅ Saldo päivitetty!\n{target['username']}: {sign}{amount:.0f} € → uusi saldo {float(target['balance']) + amount:.0f} €"
+    ))

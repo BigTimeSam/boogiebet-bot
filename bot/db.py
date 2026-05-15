@@ -70,6 +70,19 @@ async def get_user(telegram_id: int):
     return dict(row) if row else None
 
 
+async def get_user_by_username(username: str):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM users WHERE lower(username) = lower($1)", username
+    )
+    return dict(row) if row else None
+
+
+async def add_balance(user_id: int, amount: float):
+    pool = await get_pool()
+    await pool.execute("UPDATE users SET balance = balance + $1 WHERE id = $2", amount, user_id)
+
+
 async def set_admin(telegram_id: int):
     pool = await get_pool()
     await pool.execute("UPDATE users SET is_admin = TRUE WHERE telegram_id = $1", telegram_id)
