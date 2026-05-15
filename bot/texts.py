@@ -250,6 +250,16 @@ ADMIN_ODDS_LIST = "✏️ Valitse kohde jonka kertoimia haluat muuttaa:\n\n(Vain
 
 ADMIN_NO_ODDS_BETS = "Ei lukittuja kohteita ilman vetoja."
 
+ADMIN_REVERT_LIST = "↩️ Valitse peruutettava kohde:"
+ADMIN_NO_RESOLVED_BETS = "Ei ratkaistuja kohteita peruutettavaksi."
+ADMIN_REVERT_CONFIRM = (
+    "⚠️ Peruutetaanko kohteen #{id} ratkaisu?\n\n"
+    "{title}\n"
+    "Tulos oli: {result}\n\n"
+    "Voittajilta vedetään takaisin maksetut voitot."
+)
+BET_REVERTED = "↩️ Kohteen #{id} ratkaisu peruutettu. Kohde on nyt lukittuna."
+
 ODDS_COPY_PASTE_SIMPLE = (
     "✏️ Muokkaa kertoimia — #{id} {title}\n\n"
     "Kopioi alla oleva komento, muokkaa kertoimia ja lähetä takaisin:\n\n"

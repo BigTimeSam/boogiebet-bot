@@ -31,6 +31,9 @@ def admin_panel_keyboard(game_finished: bool = False):
             InlineKeyboardButton("💰 Aseta panosrajat", callback_data="adm:limits_list"),
         ],
         [
+            InlineKeyboardButton("↩️ Peruuta ratkaisu", callback_data="adm:revert_list"),
+        ],
+        [
             InlineKeyboardButton("🏁 Lopeta peli", callback_data="adm:finish"),
             InlineKeyboardButton("🔄 Resetoi kaikki", callback_data="adm:reset"),
         ],
@@ -333,8 +336,64 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(texts.BET_RESOLVED_MSG.format(
             id=bet_id, title=bet["title"], result=result_fi, winners=winners_text
         )), reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Admin-paneeli", callback_data="adm:panel")]
+            [InlineKeyboardButton("↩️ Peruuta ratkaisu", callback_data=f"adm:revert:{bet_id}")],
+            [InlineKeyboardButton("⬅️ Admin-paneeli", callback_data="adm:panel")],
         ]))
+
+    elif action == "revert_list":
+        resolved_bets = await db.get_resolved_bets()
+        if not resolved_bets:
+            await query.message.edit_text(texts.H(texts.ADMIN_NO_RESOLVED_BETS), reply_markup=admin_panel_keyboard())
+            return
+        keyboard = [
+            [InlineKeyboardButton(
+                f"↩️ #{b['id']} {b['title']}",
+                callback_data=f"adm:revert:{b['id']}",
+            )]
+            for b in resolved_bets
+        ]
+        keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
+        await query.message.edit_text(texts.H(texts.ADMIN_REVERT_LIST), reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif action == "revert" and len(parts) == 3:
+        bet_id = int(parts[2])
+        bet = await db.get_bet(bet_id)
+        if not bet or bet["status"] != "resolved":
+            await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
+            return
+        if bet["bet_type"] == "winner":
+            options = await db.get_bet_options(bet_id)
+            winning = next((o for o in options if str(o["id"]) == bet["result"]), None)
+            result_fi = f"🏆 {winning['label']}" if winning else f"Option {bet['result']}"
+        else:
+            result_fi = "Kyllä ✅" if bet["result"] == "yes" else "Ei ❌"
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Kyllä, peruuta", callback_data=f"adm:revert_confirm:{bet_id}"),
+                InlineKeyboardButton("❌ Peruuta", callback_data="adm:revert_list"),
+            ]
+        ])
+        await query.message.edit_text(
+            texts.H(texts.ADMIN_REVERT_CONFIRM.format(id=bet_id, title=bet["title"], result=result_fi)),
+            reply_markup=keyboard,
+        )
+
+    elif action == "revert_confirm":
+        bet_id = int(parts[2])
+        bet = await db.get_bet(bet_id)
+        if not bet or bet["status"] != "resolved":
+            await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
+            return
+        success = await db.revert_resolved_bet(bet_id)
+        if success:
+            await query.answer(f"↩️ Kohteen #{bet_id} ratkaisu peruutettu.")
+            game_done = await db.is_game_finished()
+            await query.message.edit_text(
+                texts.H(texts.BET_REVERTED.format(id=bet_id)),
+                reply_markup=admin_panel_keyboard(game_done),
+            )
+        else:
+            await query.answer("❌ Peruutus epäonnistui.", show_alert=True)
 
     elif action == "odds_list":
         all_bets = await db.get_active_bets()

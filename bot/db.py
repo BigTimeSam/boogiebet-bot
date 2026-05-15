@@ -504,6 +504,63 @@ async def get_all_users_wager_stats():
     return {tid: (v[0], v[1]) for tid, v in stats.items()}
 
 
+async def revert_resolved_bet(bet_id: int) -> bool:
+    """Revert a resolved bet back to locked status, clawing back winner payouts."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            bet = await conn.fetchrow(
+                "SELECT * FROM bets WHERE id = $1 AND status = 'resolved'", bet_id
+            )
+            if not bet:
+                return False
+            result = bet["result"]
+            if bet["bet_type"] == "winner":
+                winning_option_id = int(result)
+                wagers = await conn.fetch(
+                    "SELECT w.user_id, w.amount, bo.odds "
+                    "FROM wagers w "
+                    "JOIN bet_options bo ON bo.id = w.option_id "
+                    "WHERE w.bet_id = $1 AND w.option_id = $2",
+                    bet_id, winning_option_id,
+                )
+                for w in wagers:
+                    payout = float(w["amount"]) * float(w["odds"])
+                    await conn.execute(
+                        "UPDATE users SET balance = balance - $1 WHERE id = $2",
+                        payout, w["user_id"],
+                    )
+            else:
+                wagers = await conn.fetch(
+                    "SELECT w.user_id, w.amount FROM wagers w "
+                    "WHERE w.bet_id = $1 AND w.side = $2",
+                    bet_id, result,
+                )
+                odds = float(bet["yes_odds"]) if result == "yes" else float(bet["no_odds"])
+                for w in wagers:
+                    payout = float(w["amount"]) * odds
+                    await conn.execute(
+                        "UPDATE users SET balance = balance - $1 WHERE id = $2",
+                        payout, w["user_id"],
+                    )
+            await conn.execute(
+                "UPDATE bets SET status = 'locked', result = NULL WHERE id = $1",
+                bet_id,
+            )
+    return True
+
+
+async def get_resolved_bets() -> list[dict]:
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT b.*, bo.label AS winning_option_label "
+        "FROM bets b "
+        "LEFT JOIN bet_options bo ON bo.id::text = b.result AND b.bet_type = 'winner' "
+        "WHERE b.status = 'resolved' ORDER BY b.id DESC"
+    )
+    return [dict(r) for r in rows]
+
+
 async def has_resolved_bets():
     pool = await get_pool()
     val = await pool.fetchval("SELECT EXISTS(SELECT 1 FROM bets WHERE status = 'resolved')")
