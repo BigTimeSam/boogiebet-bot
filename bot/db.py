@@ -214,7 +214,7 @@ async def delete_bet(bet_id: int):
             wagers = await conn.fetch(
                 "SELECT w.user_id, w.amount FROM wagers w "
                 "JOIN bets b ON b.id = w.bet_id "
-                "WHERE w.bet_id = $1 AND b.status = 'open'",
+                "WHERE w.bet_id = $1 AND b.status IN ('open', 'locked')",
                 bet_id,
             )
             for w in wagers:
@@ -225,7 +225,7 @@ async def delete_bet(bet_id: int):
             await conn.execute("DELETE FROM wagers WHERE bet_id = $1", bet_id)
             await conn.execute("DELETE FROM bet_options WHERE bet_id = $1", bet_id)
             result = await conn.execute(
-                "DELETE FROM bets WHERE id = $1 AND status = 'open'", bet_id
+                "DELETE FROM bets WHERE id = $1 AND status IN ('open', 'locked')", bet_id
             )
             return result == "DELETE 1"
 

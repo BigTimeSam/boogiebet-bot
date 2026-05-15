@@ -161,12 +161,15 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard(game_done))
 
     elif action == "delete_list":
-        bets = await db.get_open_bets()
+        bets = await db.get_active_bets()
         if not bets:
-            await query.message.edit_text(texts.H("Ei avoimia kohteita poistettavaksi."), reply_markup=admin_panel_keyboard())
+            await query.message.edit_text(texts.H("Ei poistettavia kohteita."), reply_markup=admin_panel_keyboard())
             return
         keyboard = [
-            [InlineKeyboardButton(f"🗑️ #{b['id']} {b['title']}", callback_data=f"adm:delete_confirm:{b['id']}")]
+            [InlineKeyboardButton(
+                f"🗑️ {'🔒 ' if b['status'] == 'locked' else ''}#{b['id']} {b['title']}",
+                callback_data=f"adm:delete_confirm:{b['id']}",
+            )]
             for b in bets
         ]
         keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
@@ -178,7 +181,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not bet:
             await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
             return
-        if bet["status"] != "open":
+        if bet["status"] == "resolved":
             await query.answer(texts.BET_DELETE_FORBIDDEN, show_alert=True)
             return
         keyboard = InlineKeyboardMarkup([
