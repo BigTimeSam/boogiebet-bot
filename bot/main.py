@@ -57,6 +57,7 @@ def main():
     app.add_handler(CommandHandler("weights", admin.cmd_list_weights))
     app.add_handler(CommandHandler("weight", admin.cmd_set_weight))
     app.add_handler(CommandHandler("lisaasaldo", admin.cmd_add_balance))
+    app.add_handler(CommandHandler("kepuli", admin.cmd_set_kepuli))
 
     # Inline keyboard callbacks
     app.add_handler(CallbackQueryHandler(admin.admin_callback, pattern=r"^adm:"))

@@ -1036,4 +1036,15 @@ async def _build_leaderboard():
                 msg += texts.LEADERBOARD_ROW_MANY_WAGERS.format(rank=i, username=name, balance=balance, count=count, potential=balance + payout)
     if game_done:
         msg += texts.GAME_FINISHED_NOTICE
+
+    kepulit = await db.get_kepulit()
+    if kepulit:
+        msg += texts.KEPULIT_HEADER
+        for i, row in enumerate(kepulit, 1):
+            name = row["username"] or f"user{row['telegram_id']}"
+            msg += texts.KEPULIT_ROW.format(
+                rank=i, username=name,
+                balance=float(row["balance"]),
+                bonus=float(row["bonus_balance"]),
+            )
     return msg

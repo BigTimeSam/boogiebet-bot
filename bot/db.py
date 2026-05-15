@@ -42,6 +42,9 @@ async def _migrate(pool):
         await conn.execute(
             "ALTER TABLE bets ADD COLUMN IF NOT EXISTS opened_once BOOLEAN NOT NULL DEFAULT FALSE"
         )
+        await conn.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_balance NUMERIC(10,2) NOT NULL DEFAULT 0"
+        )
 
 
 async def get_pool():
@@ -80,7 +83,26 @@ async def get_user_by_username(username: str):
 
 async def add_balance(user_id: int, amount: float):
     pool = await get_pool()
-    await pool.execute("UPDATE users SET balance = balance + $1 WHERE id = $2", amount, user_id)
+    await pool.execute(
+        "UPDATE users SET balance = balance + $1, bonus_balance = bonus_balance + $1 WHERE id = $2",
+        amount, user_id,
+    )
+
+
+async def set_bonus_balance(user_id: int, amount: float):
+    """Set the bonus_balance marker for a user (does not affect real balance)."""
+    pool = await get_pool()
+    await pool.execute("UPDATE users SET bonus_balance = $1 WHERE id = $2", amount, user_id)
+
+
+async def get_kepulit():
+    """Return users who have received manually added balance, ordered by bonus_balance desc."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT telegram_id, username, balance, bonus_balance FROM users "
+        "WHERE bonus_balance > 0 ORDER BY bonus_balance DESC"
+    )
+    return [dict(r) for r in rows]
 
 
 async def set_admin(telegram_id: int):

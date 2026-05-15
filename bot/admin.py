@@ -443,6 +443,16 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             name = row["username"] or f"user{row['telegram_id']}"
             msg += texts.GAME_FINISHED_ROW.format(rank=i, username=name, balance=float(row["balance"]))
         msg += texts.GAME_FINISHED_NOTICE
+        kepulit = await db.get_kepulit()
+        if kepulit:
+            msg += texts.KEPULIT_HEADER
+            for i, row in enumerate(kepulit, 1):
+                name = row["username"] or f"user{row['telegram_id']}"
+                msg += texts.KEPULIT_ROW.format(
+                    rank=i, username=name,
+                    balance=float(row["balance"]),
+                    bonus=float(row["bonus_balance"]),
+                )
         await query.message.edit_text(texts.H(msg))
 
     elif action == "reset":
@@ -588,6 +598,16 @@ async def _finish_game(update):
         name = row["username"] or f"user{row['telegram_id']}"
         msg += texts.GAME_FINISHED_ROW.format(rank=i, username=name, balance=float(row["balance"]))
     msg += texts.GAME_FINISHED_NOTICE
+    kepulit = await db.get_kepulit()
+    if kepulit:
+        msg += texts.KEPULIT_HEADER
+        for i, row in enumerate(kepulit, 1):
+            name = row["username"] or f"user{row['telegram_id']}"
+            msg += texts.KEPULIT_ROW.format(
+                rank=i, username=name,
+                balance=float(row["balance"]),
+                bonus=float(row["bonus_balance"]),
+            )
     await update.message.reply_text(texts.H(msg))
 
 
@@ -614,3 +634,36 @@ async def cmd_add_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texts.H(
         f"✅ Saldo päivitetty!\n{target['username']}: {sign}{amount:.0f} € → uusi saldo {float(target['balance']) + amount:.0f} €"
     ))
+
+
+async def cmd_set_kepuli(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Mark a user as having received bonus balance (kepuli), without touching real balance.
+    Usage: /kepuli <handle> <summa>   — set bonus marking
+           /kepuli <handle> 0         — clear the marking
+    """
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
+    if not ctx.args or len(ctx.args) < 2:
+        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/kepuli <handle> <summa>")))
+        return
+    handle = ctx.args[0].lstrip("@")
+    try:
+        amount = float(ctx.args[1].replace(",", "."))
+        if amount < 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/kepuli <handle> <summa>")))
+        return
+    target = await db.get_user_by_username(handle)
+    if not target:
+        await update.message.reply_text(texts.H(f"❌ Käyttäjää '{handle}' ei löydy."))
+        return
+    await db.set_bonus_balance(target["id"], amount)
+    if amount == 0:
+        await update.message.reply_text(texts.H(texts.KEPULI_CLEARED.format(username=target["username"])))
+    else:
+        await update.message.reply_text(texts.H(texts.KEPULI_SET.format(
+            username=target["username"], bonus=amount,
+        )))
