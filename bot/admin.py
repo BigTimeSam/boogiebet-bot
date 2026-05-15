@@ -726,3 +726,33 @@ async def cmd_set_kepuli(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(texts.H(texts.KEPULI_SET.format(
             username=target["username"], bonus=amount,
         )))
+
+
+async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Lähetä viesti kaikille rekisteröityneille pelaajille.
+    Käyttö: /broadcast <viesti>
+    """
+    user = await db.get_user(update.effective_user.id)
+    if not user or not user["is_admin"]:
+        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        return
+    if not ctx.args:
+        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/broadcast <viesti>")))
+        return
+
+    message = escape(" ".join(ctx.args))
+    broadcast_text = f"📢 <b>Tiedote adminilta:</b>\n\n{message}"
+
+    telegram_ids = await db.get_all_telegram_ids()
+    sent, failed = 0, 0
+    bot = update.get_bot()
+    for tid in telegram_ids:
+        try:
+            await bot.send_message(chat_id=tid, text=broadcast_text, parse_mode="HTML")
+            sent += 1
+        except Exception:
+            failed += 1
+
+    await update.message.reply_text(
+        texts.H(f"✅ Tiedote lähetetty!\nLähetettiin: {sent} | Epäonnistui: {failed}")
+    )
