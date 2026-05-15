@@ -151,6 +151,18 @@ async def get_bet_wager_count(bet_id: int) -> int:
     return await pool.fetchval("SELECT COUNT(*) FROM wagers WHERE bet_id = $1", bet_id)
 
 
+async def get_locked_bets_with_totals() -> list[dict]:
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT b.id, b.title, b.status, b.bet_type, b.weight, "
+        "COALESCE(SUM(w.amount), 0) AS total_wagered "
+        "FROM bets b LEFT JOIN wagers w ON w.bet_id = b.id "
+        "WHERE b.status = 'locked' "
+        "GROUP BY b.id ORDER BY b.weight DESC, b.id"
+    )
+    return [dict(r) for r in rows]
+
+
 async def update_simple_bet_odds(bet_id: int, yes_odds: float, no_odds: float) -> bool:
     pool = await get_pool()
     result = await pool.execute(

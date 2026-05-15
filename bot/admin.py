@@ -253,14 +253,16 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif action == "resolve_list":
-        all_bets = await db.get_active_bets()
-        unresolved = [b for b in all_bets if b["status"] in ("open", "locked")]
-        if not unresolved:
+        locked_bets = await db.get_locked_bets_with_totals()
+        if not locked_bets:
             await query.message.edit_text(texts.H(texts.ADMIN_NO_LOCKED_BETS), reply_markup=admin_panel_keyboard())
             return
         keyboard = [
-            [InlineKeyboardButton(f"#{b['id']} {b['title']}", callback_data=f"adm:resolve:{b['id']}")]
-            for b in unresolved
+            [InlineKeyboardButton(
+                f"#{b['id']} {b['title']} ({float(b['total_wagered']):.0f} €)",
+                callback_data=f"adm:resolve:{b['id']}",
+            )]
+            for b in locked_bets
         ]
         keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="adm:panel")])
         await query.message.edit_text(texts.H(texts.ADMIN_RESOLVE_LIST), reply_markup=InlineKeyboardMarkup(keyboard))
