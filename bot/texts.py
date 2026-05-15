@@ -110,8 +110,11 @@ GAME_FINISHED_ROW = "{rank}. {username}: {balance:.0f} €\n"
 
 GAME_FINISHED_NOTICE = "\n🔒 Peli on päättynyt."
 
-KEPULIT_HEADER = "\n\n🤡 Kepulit\n\n"
+KEPULIT_HEADER = "\n🤡 Kepulit\n\n"
 KEPULIT_ROW = "{rank}. {username}: {balance:.0f} € (lisätty {bonus:.0f} €)\n"
+KEPULIT_ROW_NO_WAGERS = "{rank}. {username}: {balance:.0f} € (lisätty {bonus:.0f} €) (0 vetoa)\n"
+KEPULIT_ROW_ONE_WAGER = "{rank}. {username}: {balance:.0f} € (lisätty {bonus:.0f} €) (1 veto, maksimivoitto {potential:.0f} €)\n"
+KEPULIT_ROW_MANY_WAGERS = "{rank}. {username}: {balance:.0f} € (lisätty {bonus:.0f} €) ({count} vetoa, maksimivoitto {potential:.0f} €)\n"
 
 KEPULI_SET = "🤡 Kepulimerkintä asetettu!\n{username}: {bonus:.0f} € lisättyä saldoa"
 KEPULI_CLEARED = "✅ Kepulimerkintä poistettu käyttäjältä {username}."

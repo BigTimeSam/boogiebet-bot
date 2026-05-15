@@ -1042,9 +1042,16 @@ async def _build_leaderboard():
         msg += texts.KEPULIT_HEADER
         for i, row in enumerate(kepulit, 1):
             name = row["username"] or f"user{row['telegram_id']}"
-            msg += texts.KEPULIT_ROW.format(
-                rank=i, username=name,
-                balance=float(row["balance"]),
-                bonus=float(row["bonus_balance"]),
-            )
+            balance = float(row["balance"])
+            bonus = float(row["bonus_balance"])
+            if game_done:
+                msg += texts.KEPULIT_ROW.format(rank=i, username=name, balance=balance, bonus=bonus)
+            else:
+                count, payout = wager_stats.get(row["telegram_id"], (0, 0.0))
+                if count == 0:
+                    msg += texts.KEPULIT_ROW_NO_WAGERS.format(rank=i, username=name, balance=balance, bonus=bonus)
+                elif count == 1:
+                    msg += texts.KEPULIT_ROW_ONE_WAGER.format(rank=i, username=name, balance=balance, bonus=bonus, potential=balance + payout)
+                else:
+                    msg += texts.KEPULIT_ROW_MANY_WAGERS.format(rank=i, username=name, balance=balance, bonus=bonus, count=count, potential=balance + payout)
     return msg
