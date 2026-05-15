@@ -470,7 +470,8 @@ async def get_all_telegram_ids() -> list[int]:
 async def get_leaderboard():
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT telegram_id, username, balance FROM users ORDER BY balance DESC"
+        "SELECT telegram_id, username, balance FROM users "
+        "WHERE bonus_balance = 0 ORDER BY balance DESC"
     )
     return [dict(r) for r in rows]
 
