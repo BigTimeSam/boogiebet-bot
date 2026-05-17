@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>boogieBet – Tulokset</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { background: #09090b; color: #f4f4f5; font-family: system-ui, -apple-system, sans-serif; margin: 0; }
+    ::-webkit-scrollbar { height: 4px; width: 4px; }
+    ::-webkit-scrollbar-track { background: #18181b; }
+    ::-webkit-scrollbar-thumb { background: #52525b; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    /* ── Utilities ─────────────────────────────────────────────────────────── */
+    const fmt   = (n) => (n ?? 0).toFixed(0) + '\u00a0€';
+    const fmtD  = (n) => (n ?? 0).toFixed(2) + '\u00a0€';
+    const fmtSign = (n) => ((n ?? 0) >= 0 ? '+' : '') + (n ?? 0).toFixed(0) + '\u00a0€';
+    const pnlCls = (n) => (n > 0 ? 'text-emerald-400' : n < 0 ? 'text-red-400' : 'text-zinc-500');
+    const MEDALS = ['🥇', '🥈', '🥉'];
+
+    /* ── Primitive components ───────────────────────────────────────────────── */
+    function Badge({ children, color = 'zinc' }) {
+      const map = {
+        green:  'bg-emerald-900/50 text-emerald-300 border-emerald-700/50',
+        red:    'bg-red-900/50 text-red-300 border-red-700/50',
+        zinc:   'bg-zinc-800 text-zinc-400 border-zinc-700',
+        violet: 'bg-violet-900/50 text-violet-300 border-violet-700/50',
+        yellow: 'bg-yellow-900/40 text-yellow-300 border-yellow-700/40',
+        blue:   'bg-blue-900/50 text-blue-300 border-blue-700/50',
+      };
+      return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${map[color]}`}>
+          {children}
+        </span>
+      );
+    }
+
+    function Card({ children, className = '' }) {
+      return (
+        <div className={`bg-zinc-900 border border-zinc-800 rounded-xl p-4 ${className}`}>
+          {children}
+        </div>
+      );
+    }
+
+    function StatCard({ icon, label, value, sub }) {
+      return (
+        <Card>
+          <div className="flex items-start gap-3">
+            <span className="text-2xl leading-none mt-0.5">{icon}</span>
+            <div className="min-w-0">
+              <p className="text-xs text-zinc-500 uppercase tracking-wider truncate">{label}</p>
+              <p className="text-xl font-bold text-white mt-0.5 leading-tight">{value}</p>
+              {sub && <p className="text-xs text-zinc-500 mt-1 leading-snug">{sub}</p>}
+            </div>
+          </div>
+        </Card>
+      );
+    }
+
+    /* ── Leaderboard ────────────────────────────────────────────────────────── */
+    function Leaderboard({ data }) {
+      const { leaderboard, starting_balance } = data;
+      return (
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-200 mb-4">🏆 Lopullinen tulostaulu</h2>
+          <div className="overflow-x-auto rounded-xl border border-zinc-800">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-zinc-500 uppercase tracking-wider border-b border-zinc-800 bg-zinc-900/80">
+                  <th className="text-left px-4 py-3 font-medium">#</th>
+                  <th className="text-left px-4 py-3 font-medium">Pelaaja</th>
+                  <th className="text-right px-4 py-3 font-medium">Saldo</th>
+                  <th className="text-right px-4 py-3 font-medium">PnL</th>
+                  <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">PnL%</th>
+                  <th className="text-right px-4 py-3 font-medium hidden md:table-cell">Panokset</th>
+                  <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">V / H</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.map((p, i) => {
+                  const pct = ((p.balance - starting_balance) / starting_balance * 100);
+                  const isTop3 = i < 3;
+                  return (
+                    <tr
+                      key={p.username}
+                      className={`border-b border-zinc-800/50 hover:bg-zinc-800/40 transition-colors
+                        ${isTop3 ? 'bg-zinc-800/20' : ''}`}
+                    >
+                      <td className="px-4 py-3 w-10">
+                        {MEDALS[i] ?? <span className="text-zinc-600 font-mono text-xs">{p.rank}</span>}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-white">{p.username}</td>
+                      <td className="px-4 py-3 text-right font-mono font-semibold">{fmt(p.balance)}</td>
+                      <td className={`px-4 py-3 text-right font-mono font-bold ${pnlCls(p.pnl)}`}>
+                        {fmtSign(p.pnl)}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-mono text-sm hidden sm:table-cell ${pnlCls(p.pnl)}`}>
+                        {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-zinc-400 text-sm hidden md:table-cell">
+                        {fmt(p.total_wagered)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm hidden sm:table-cell">
+                        <span className="text-emerald-400 font-medium">{p.bets_won}V</span>
+                        <span className="text-zinc-600 mx-0.5">/</span>
+                        <span className="text-red-400 font-medium">{p.bets_lost}H</span>
+                        {p.bets_open > 0 && (
+                          <span className="text-yellow-400 font-medium"> +{p.bets_open}A</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-zinc-600 mt-3">
+            Aloitussaldo: {fmt(starting_balance)} kaikilla · A = avoin kohde
+          </p>
+        </div>
+      );
+    }
+
+    /* ── Bet card ───────────────────────────────────────────────────────────── */
+    function BetCard({ bet }) {
+      const [open, setOpen] = useState(false);
+      const winners = bet.wagers.filter(w => w.won === true);
+      const losers  = bet.wagers.filter(w => w.won === false);
+      const pending = bet.wagers.filter(w => w.won === null);
+
+      const statusBadge =
+        bet.status === 'resolved' ? <Badge color="green">✅ Ratkaistu</Badge> :
+        bet.status === 'locked'   ? <Badge color="yellow">🔒 Lukittu</Badge> :
+                                    <Badge color="blue">🟢 Auki</Badge>;
+
+      return (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl mb-3 overflow-hidden">
+          {/* Header row */}
+          <div
+            className="flex items-start gap-4 p-4 cursor-pointer select-none hover:bg-zinc-800/40 transition-colors"
+            onClick={() => setOpen(!open)}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <span className="text-xs text-zinc-600 font-mono">#{bet.id}</span>
+                {statusBadge}
+                {bet.type === 'winner' && <Badge color="violet">🏆 Mestari</Badge>}
+              </div>
+              <h3 className="font-semibold text-white text-sm leading-snug">{bet.title}</h3>
+              {bet.status === 'resolved' && (
+                <p className="text-xs mt-1.5 text-zinc-500">
+                  Tulos:&nbsp;
+                  <span className="text-violet-300 font-semibold">{bet.result_label}</span>
+                </p>
+              )}
+              {bet.type === 'simple' && bet.yes_odds && (
+                <p className="text-xs text-zinc-600 mt-1">
+                  Kyllä @ {bet.yes_odds.toFixed(2)} &nbsp;·&nbsp; Ei @ {bet.no_odds.toFixed(2)}
+                </p>
+              )}
+            </div>
+            <div className="text-right shrink-0 space-y-1">
+              <p className="font-semibold text-white text-sm">{fmt(bet.total_wagered)}</p>
+              <p className="text-xs text-zinc-500">{bet.num_bettors} panosta</p>
+              {bet.status === 'resolved' && bet.num_bettors > 0 && (
+                <p className="text-xs">
+                  <span className="text-emerald-400">{winners.length}W</span>
+                  <span className="text-zinc-600 mx-0.5">/</span>
+                  <span className="text-red-400">{losers.length}H</span>
+                </p>
+              )}
+              <span className="text-zinc-600 text-xs">{open ? '▲' : '▼'}</span>
+            </div>
+          </div>
+
+          {/* Expanded details */}
+          {open && (
+            <div className="border-t border-zinc-800 px-4 pt-4 pb-4">
+              {/* Winner-bet options */}
+              {bet.type === 'winner' && bet.options.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {bet.options.map(opt => {
+                    const isWinner = String(opt.id) === String(bet.result);
+                    return (
+                      <span
+                        key={opt.id}
+                        className={`text-xs px-3 py-1.5 rounded-lg border font-medium
+                          ${isWinner
+                            ? 'bg-violet-900/60 border-violet-600 text-violet-200'
+                            : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                          }`}
+                      >
+                        {isWinner && '🏆 '}{opt.label}
+                        <span className="ml-1.5 opacity-60">@ {parseFloat(opt.odds).toFixed(2)}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="overflow-x-auto rounded-lg border border-zinc-800">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-zinc-600 border-b border-zinc-800 bg-zinc-800/60">
+                      <th className="text-left px-3 py-2 font-medium">Pelaaja</th>
+                      <th className="text-left px-3 py-2 font-medium">Valinta</th>
+                      <th className="text-right px-3 py-2 font-medium">Panos</th>
+                      {bet.status === 'resolved' && (
+                        <>
+                          <th className="text-right px-3 py-2 font-medium">Voitto</th>
+                          <th className="text-right px-3 py-2 font-medium">PnL</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bet.wagers.map((w, i) => (
+                      <tr
+                        key={i}
+                        className={`border-b border-zinc-800/40
+                          ${w.won === true  ? 'bg-emerald-950/40' :
+                            w.won === false ? 'bg-red-950/30' : ''}`}
+                      >
+                        <td className="px-3 py-2 font-medium text-zinc-200">{w.username}</td>
+                        <td className="px-3 py-2 text-zinc-400">{w.option_label}</td>
+                        <td className="px-3 py-2 text-right font-mono text-zinc-300">{fmt(w.amount)}</td>
+                        {bet.status === 'resolved' && (
+                          <>
+                            <td className="px-3 py-2 text-right font-mono">
+                              {w.won === true
+                                ? <span className="text-emerald-400">{fmtD(w.payout)}</span>
+                                : <span className="text-zinc-600">—</span>}
+                            </td>
+                            <td className={`px-3 py-2 text-right font-mono font-bold ${pnlCls(w.pnl)}`}>
+                              {fmtSign(w.pnl)}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                  {/* Totals row */}
+                  {bet.status === 'resolved' && bet.wagers.length > 1 && (
+                    <tfoot>
+                      <tr className="border-t border-zinc-700 bg-zinc-800/50">
+                        <td colSpan={2} className="px-3 py-2 text-zinc-500 font-medium">Yhteensä</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-zinc-300">
+                          {fmt(bet.total_wagered)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-400">
+                          {fmt(winners.reduce((s, w) => s + (w.payout || 0), 0))}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-mono font-bold ${pnlCls(
+                          bet.wagers.reduce((s, w) => s + (w.pnl || 0), 0)
+                        )}`}>
+                          {fmtSign(bet.wagers.reduce((s, w) => s + (w.pnl || 0), 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function BetsList({ data }) {
+      const [filter, setFilter] = useState('all');
+      const filtered = useMemo(() => {
+        if (filter === 'resolved') return data.bets.filter(b => b.status === 'resolved');
+        if (filter === 'open')     return data.bets.filter(b => b.status !== 'resolved');
+        return data.bets;
+      }, [data.bets, filter]);
+
+      const filters = [
+        { id: 'all',      label: 'Kaikki' },
+        { id: 'resolved', label: 'Ratkaistut' },
+        { id: 'open',     label: 'Avoimet' },
+      ];
+
+      return (
+        <div>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+            <h2 className="text-lg font-semibold text-zinc-200">🎯 Vetokohteet</h2>
+            <div className="flex gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
+              {filters.map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors
+                    ${filter === f.id ? 'bg-violet-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {filtered.map(bet => <BetCard key={bet.id} bet={bet} />)}
+          {filtered.length === 0 && (
+            <p className="text-zinc-500 text-center py-12">Ei kohteita.</p>
+          )}
+        </div>
+      );
+    }
+
+    /* ── Players view ───────────────────────────────────────────────────────── */
+    function PlayersView({ data }) {
+      const [selected, setSelected] = useState(data.leaderboard[0]?.username || '');
+
+      const player = useMemo(
+        () => data.leaderboard.find(p => p.username === selected),
+        [selected, data.leaderboard]
+      );
+
+      const playerBets = useMemo(() => {
+        if (!selected) return [];
+        return data.bets.flatMap(bet => {
+          const w = bet.wagers.find(w => w.username === selected);
+          if (!w) return [];
+          return [{
+            ...w,
+            bet_id: bet.id,
+            bet_title: bet.title,
+            bet_status: bet.status,
+            bet_result_label: bet.result_label,
+            bet_type: bet.type,
+          }];
+        });
+      }, [selected, data.bets]);
+
+      const totalWagered = playerBets.reduce((s, w) => s + w.amount, 0);
+      const resolvedBets = playerBets.filter(w => w.bet_status === 'resolved');
+      const wonCount  = resolvedBets.filter(w => w.won).length;
+      const lostCount = resolvedBets.filter(w => !w.won).length;
+      const winRate   = (wonCount + lostCount > 0) ? wonCount / (wonCount + lostCount) * 100 : 0;
+      const totalPnl  = resolvedBets.reduce((s, w) => s + (w.pnl || 0), 0);
+
+      // Best and worst single bet
+      const bestBet  = resolvedBets.length > 0 ? resolvedBets.reduce((a, b) => (b.pnl ?? 0) > (a.pnl ?? 0) ? b : a) : null;
+      const worstBet = resolvedBets.length > 0 ? resolvedBets.reduce((a, b) => (b.pnl ?? 0) < (a.pnl ?? 0) ? b : a) : null;
+
+      return (
+        <div>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
+            <h2 className="text-lg font-semibold text-zinc-200">👤 Pelaajan vedot</h2>
+            <select
+              value={selected}
+              onChange={e => setSelected(e.target.value)}
+              className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-600 cursor-pointer"
+            >
+              {data.leaderboard.map(p => (
+                <option key={p.username} value={p.username}>
+                  {MEDALS[p.rank - 1] || `#${p.rank}`} {p.username}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {player && (
+            <>
+              {/* Summary stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                <StatCard icon="💰" label="Loppusaldo" value={fmt(player.balance)} sub={`aloitus ${fmt(data.starting_balance)}`} />
+                <StatCard
+                  icon="📈"
+                  label="PnL yhteensä"
+                  value={<span className={pnlCls(player.pnl)}>{fmtSign(player.pnl)}</span>}
+                  sub={`${player.pnl >= 0 ? '+' : ''}${((player.balance - data.starting_balance) / data.starting_balance * 100).toFixed(1)}%`}
+                />
+                <StatCard
+                  icon="🎯"
+                  label="Osuvuus"
+                  value={`${winRate.toFixed(0)}%`}
+                  sub={`${wonCount}V / ${lostCount}H${player.bets_open > 0 ? ` / ${player.bets_open}A` : ''}`}
+                />
+                <StatCard icon="💸" label="Panokset yhteensä" value={fmt(totalWagered)} sub={`${playerBets.length} vetoa`} />
+              </div>
+
+              {/* Highlights */}
+              {(bestBet || worstBet) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                  {bestBet && (bestBet.pnl ?? 0) > 0 && (
+                    <StatCard
+                      icon="🚀"
+                      label="Paras veto"
+                      value={<span className="text-emerald-400">{fmtSign(bestBet.pnl)}</span>}
+                      sub={bestBet.bet_title}
+                    />
+                  )}
+                  {worstBet && (worstBet.pnl ?? 0) < 0 && (
+                    <StatCard
+                      icon="💀"
+                      label="Huonoin veto"
+                      value={<span className="text-red-400">{fmtSign(worstBet.pnl)}</span>}
+                      sub={worstBet.bet_title}
+                    />
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Bet table */}
+          <div className="overflow-x-auto rounded-xl border border-zinc-800">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-zinc-500 uppercase tracking-wider border-b border-zinc-800 bg-zinc-900/80">
+                  <th className="text-left px-4 py-3 font-medium">Kohde</th>
+                  <th className="text-left px-4 py-3 font-medium">Valinta</th>
+                  <th className="text-right px-4 py-3 font-medium">Panos</th>
+                  <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Tulos</th>
+                  <th className="text-right px-4 py-3 font-medium">Voitto</th>
+                  <th className="text-right px-4 py-3 font-medium">PnL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {playerBets.map((w, i) => (
+                  <tr
+                    key={i}
+                    className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors
+                      ${w.won === true ? 'bg-emerald-950/25' : w.won === false ? 'bg-red-950/15' : ''}`}
+                  >
+                    <td className="px-4 py-3">
+                      <span className="text-zinc-600 text-xs font-mono mr-1">#{w.bet_id}</span>
+                      <span className="text-zinc-200">{w.bet_title}</span>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-400 text-sm">{w.option_label}</td>
+                    <td className="px-4 py-3 text-right font-mono text-zinc-300">{fmt(w.amount)}</td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      {w.bet_status === 'resolved'
+                        ? <span className="text-violet-300 text-xs font-medium">{w.bet_result_label}</span>
+                        : <Badge color="yellow">Auki</Badge>}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {w.won === true  ? <span className="text-emerald-400">{fmtD(w.payout)}</span> :
+                       w.won === false ? <span className="text-zinc-600">—</span> :
+                                        <span className="text-zinc-500">?</span>}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono font-bold ${w.pnl != null ? pnlCls(w.pnl) : 'text-zinc-500'}`}>
+                      {w.pnl != null ? fmtSign(w.pnl) : '—'}
+                    </td>
+                  </tr>
+                ))}
+                {playerBets.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-zinc-500">Ei panoksia.</td>
+                  </tr>
+                )}
+              </tbody>
+              {playerBets.length > 0 && (
+                <tfoot>
+                  <tr className="border-t border-zinc-700 bg-zinc-800/60">
+                    <td colSpan={2} className="px-4 py-3 text-xs text-zinc-500 font-medium">Yhteensä ({playerBets.length} vetoa)</td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold text-zinc-200">{fmt(totalWagered)}</td>
+                    <td className="hidden sm:table-cell"></td>
+                    <td className="px-4 py-3 text-right font-mono text-emerald-400">
+                      {fmt(resolvedBets.filter(w => w.won).reduce((s, w) => s + (w.payout || 0), 0))}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-mono font-bold ${pnlCls(totalPnl)}`}>
+                      {fmtSign(totalPnl)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    /* ── Stats view ─────────────────────────────────────────────────────────── */
+    function StatsView({ data }) {
+      const { stats, leaderboard, bets } = data;
+
+      const sortedByPnl = useMemo(
+        () => [...leaderboard].sort((a, b) => b.pnl - a.pnl),
+        [leaderboard]
+      );
+      const maxAbsPnl = Math.max(...leaderboard.map(p => Math.abs(p.pnl)), 1);
+
+      const resolvedBets = useMemo(
+        () => [...bets].filter(b => b.status === 'resolved').sort((a, b) => b.total_wagered - a.total_wagered),
+        [bets]
+      );
+
+      return (
+        <div className="space-y-8">
+          {/* Global numbers */}
+          <section>
+            <h2 className="text-lg font-semibold text-zinc-200 mb-4">📊 Kokonaistilastot</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <StatCard icon="💰" label="Koko potti" value={fmt(stats.total_pot)} sub={`${stats.total_wagers_count} panosta`} />
+              <StatCard icon="🎯" label="Vetokohteita" value={stats.total_bets} sub={`${stats.resolved_bets} ratkaistu`} />
+              <StatCard icon="👥" label="Pelaajia" value={stats.total_players} />
+              <StatCard icon="📊" label="Keskim. panos" value={fmt(stats.avg_wager)} />
+              {stats.biggest_win && (
+                <StatCard
+                  icon="🚀"
+                  label="Suurin yksittäinen voitto"
+                  value={<span className="text-emerald-400">{fmtSign(stats.biggest_win.pnl)}</span>}
+                  sub={`${stats.biggest_win.username} — ${stats.biggest_win.bet_title}`}
+                />
+              )}
+              {stats.biggest_loss && (
+                <StatCard
+                  icon="💀"
+                  label="Suurin yksittäinen tappio"
+                  value={<span className="text-red-400">{fmtSign(stats.biggest_loss.pnl)}</span>}
+                  sub={`${stats.biggest_loss.username} — ${stats.biggest_loss.bet_title}`}
+                />
+              )}
+              {stats.most_active && (
+                <StatCard
+                  icon="⚡"
+                  label="Aktiivisin pelaaja"
+                  value={stats.most_active.username}
+                  sub={`${stats.most_active.bet_count} vetoa`}
+                />
+              )}
+              {stats.biggest_pot_bet && (
+                <StatCard
+                  icon="🔥"
+                  label="Suurin yksittäinen kohde"
+                  value={fmt(stats.biggest_pot_bet.total_wagered)}
+                  sub={`${stats.biggest_pot_bet.title} · ${stats.biggest_pot_bet.num_bettors} pelaajaa`}
+                />
+              )}
+            </div>
+          </section>
+
+          {/* PnL bar chart */}
+          <section>
+            <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">📈 PnL-jakauma</h3>
+            <Card>
+              <div className="space-y-2.5">
+                {sortedByPnl.map(p => {
+                  const pct = Math.abs(p.pnl) / maxAbsPnl * 100;
+                  return (
+                    <div key={p.username} className="flex items-center gap-3">
+                      <span className="text-sm text-zinc-300 w-28 shrink-0 truncate font-medium">{p.username}</span>
+                      <div className="flex-1 relative h-7 bg-zinc-800 rounded overflow-hidden">
+                        <div
+                          className={`h-full rounded transition-all ${p.pnl >= 0 ? 'bg-emerald-700/60' : 'bg-red-700/60'}`}
+                          style={{ width: `${pct}%`, minWidth: pct > 0 ? '4px' : '0' }}
+                        />
+                        <span className={`absolute inset-0 flex items-center px-2.5 text-xs font-mono font-bold ${pnlCls(p.pnl)}`}>
+                          {fmtSign(p.pnl)}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono text-zinc-500 w-20 text-right shrink-0">{fmt(p.balance)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          </section>
+
+          {/* Per-bet stats */}
+          {resolvedBets.length > 0 && (
+            <section>
+              <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">🏆 Ratkaistut kohteet</h3>
+              <div className="overflow-x-auto rounded-xl border border-zinc-800">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-zinc-500 uppercase tracking-wider border-b border-zinc-800 bg-zinc-900/80">
+                      <th className="text-left px-4 py-3 font-medium">Kohde</th>
+                      <th className="text-right px-4 py-3 font-medium">Potti</th>
+                      <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">Pelaajia</th>
+                      <th className="text-right px-4 py-3 font-medium">W/L</th>
+                      <th className="text-left px-4 py-3 font-medium">Tulos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resolvedBets.map(b => {
+                      const w = b.wagers.filter(x => x.won).length;
+                      const l = b.wagers.filter(x => !x.won).length;
+                      return (
+                        <tr key={b.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+                          <td className="px-4 py-3">
+                            <span className="text-zinc-600 text-xs font-mono mr-1">#{b.id}</span>
+                            <span className="text-zinc-200">{b.title}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-zinc-300">{fmt(b.total_wagered)}</td>
+                          <td className="px-4 py-3 text-right text-zinc-400 hidden sm:table-cell">{b.num_bettors}</td>
+                          <td className="px-4 py-3 text-right text-sm">
+                            <span className="text-emerald-400 font-medium">{w}</span>
+                            <span className="text-zinc-600 mx-0.5">/</span>
+                            <span className="text-red-400 font-medium">{l}</span>
+                          </td>
+                          <td className="px-4 py-3 text-violet-300 text-sm font-medium">{b.result_label}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </div>
+      );
+    }
+
+    /* ── App root ────────────────────────────────────────────────────────────── */
+    const TABS = [
+      { id: 'leaderboard', label: '🏆\u00a0Tulostaulu' },
+      { id: 'bets',        label: '🎯\u00a0Vedot' },
+      { id: 'players',     label: '👤\u00a0Pelaajat' },
+      { id: 'stats',       label: '📊\u00a0Tilastot' },
+    ];
+
+    function App() {
+      const [data, setData]   = useState(null);
+      const [tab, setTab]     = useState('leaderboard');
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        fetch('./data.json')
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(setData)
+          .catch(e => setError(e.message));
+      }, []);
+
+      if (error) return (
+        <div className="min-h-screen flex items-center justify-center px-4">
+          <div className="text-center max-w-sm">
+            <p className="text-5xl mb-4">😵</p>
+            <p className="text-red-400 font-semibold mb-2">Dataa ei löydy</p>
+            <p className="text-zinc-500 text-sm">{error}</p>
+            <p className="text-zinc-600 text-xs mt-3 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 font-mono">
+              python results/generate_results.py
+            </p>
+          </div>
+        </div>
+      );
+
+      if (!data) return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-5xl mb-4" style={{animation:'pulse 1s infinite'}}>🎰</p>
+            <p className="text-zinc-400">Ladataan tuloksia...</p>
+          </div>
+        </div>
+      );
+
+      const genTime = new Date(data.generated_at).toLocaleString('fi-FI');
+
+      return (
+        <div className="max-w-5xl mx-auto px-4 py-8">
+          {/* Header */}
+          <header className="mb-8">
+            <div className="flex items-start justify-between flex-wrap gap-4">
+              <div>
+                <h1 className="text-3xl font-extrabold text-white tracking-tight">
+                  🎰 boogieBet
+                </h1>
+                <p className="text-zinc-500 text-sm mt-1.5 flex flex-wrap items-center gap-2">
+                  <span>Tulospalvelu</span>
+                  <span className="text-zinc-700">·</span>
+                  <span>{data.stats.total_players} pelaajaa</span>
+                  <span className="text-zinc-700">·</span>
+                  <span>{data.stats.total_bets} vetoa</span>
+                  <span className="text-zinc-700">·</span>
+                  <span>{fmt(data.stats.total_pot)} potti</span>
+                  {data.game_finished && (
+                    <Badge color="green">🏁 Peli päättynyt</Badge>
+                  )}
+                </p>
+              </div>
+              <p className="text-xs text-zinc-600 mt-1">Päivitetty: {genTime}</p>
+            </div>
+          </header>
+
+          {/* Tabs */}
+          <nav className="flex gap-1 mb-7 bg-zinc-900 border border-zinc-800 rounded-xl p-1 overflow-x-auto">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex-1 min-w-fit px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors
+                  ${tab === t.id
+                    ? 'bg-violet-600 text-white shadow'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Content */}
+          {tab === 'leaderboard' && <Leaderboard data={data} />}
+          {tab === 'bets'        && <BetsList    data={data} />}
+          {tab === 'players'     && <PlayersView data={data} />}
+          {tab === 'stats'       && <StatsView   data={data} />}
+
+          <footer className="mt-12 pt-6 border-t border-zinc-800 text-center text-xs text-zinc-700">
+            boogieBet · Tulospalvelu
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
