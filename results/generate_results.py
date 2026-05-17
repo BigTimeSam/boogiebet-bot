@@ -18,6 +18,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 import asyncpg
@@ -241,7 +242,7 @@ async def main():
         "stats": stats,
     }
 
-    OUTPUT.write_text(json.dumps(output, ensure_ascii=False, indent=2))
+    OUTPUT.write_text(json.dumps(output, ensure_ascii=False, indent=2, cls=_Encoder))
     print(f"✅ Tulokset tallennettu: {OUTPUT}")
     print(f"   {len(leaderboard)} pelaajaa · {len(bets_data)} vetoa · {total_wagers_count} panosta")
     print(f"   Potti yhteensä: {stats['total_pot']:.0f} €")
@@ -249,6 +250,13 @@ async def main():
 
 def wagers_by_bet_for_user(wagers_raw, user_id: int) -> list:
     return [dict(w) for w in wagers_raw if w["user_id"] == user_id]
+
+
+class _Encoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 if __name__ == "__main__":
