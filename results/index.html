@@ -70,28 +70,79 @@
     }
 
     /* ── Leaderboard ────────────────────────────────────────────────────────── */
-    function Leaderboard({ data }) {
+    function SortTh({ active, dir, onClick, children, className = '' }) {
+      return (
+        <th
+          onClick={onClick}
+          className={`px-4 py-3 font-medium cursor-pointer select-none whitespace-nowrap
+            transition-colors hover:text-zinc-200 ${active ? 'text-violet-400' : 'text-zinc-500'}
+            ${className}`}
+        >
+          {children}
+          <span className="ml-1 text-[10px]">
+            {active ? (dir === 1 ? '▲' : '▼') : <span className="opacity-20">↕</span>}
+          </span>
+        </th>
+      );
+    }
+
+    function Leaderboard({ data, onPlayerClick }) {
       const { leaderboard, starting_balance } = data;
+      const [sort, setSort] = useState({ col: 'rank', dir: 1 });
+
+      const sorted = useMemo(() => {
+        const copy = [...leaderboard];
+        return copy.sort((a, b) => {
+          let av, bv;
+          switch (sort.col) {
+            case 'rank':    av = a.rank;          bv = b.rank;          break;
+            case 'name':    av = a.username.toLowerCase(); bv = b.username.toLowerCase(); break;
+            case 'balance': av = a.balance;       bv = b.balance;       break;
+            case 'pnl':     av = a.pnl;           bv = b.pnl;           break;
+            case 'pct':     av = a.balance - starting_balance; bv = b.balance - starting_balance; break;
+            case 'wagered': av = a.total_wagered; bv = b.total_wagered; break;
+            case 'wins':    av = a.bets_won;      bv = b.bets_won;      break;
+            default: return 0;
+          }
+          if (av < bv) return -sort.dir;
+          if (av > bv) return sort.dir;
+          return 0;
+        });
+      }, [leaderboard, sort, starting_balance]);
+
+      function toggleSort(col) {
+        setSort(prev => prev.col === col
+          ? { col, dir: -prev.dir }
+          : { col, dir: col === 'rank' || col === 'name' ? 1 : -1 }
+        );
+      }
+
+      const th = (col, label, className) => (
+        <SortTh active={sort.col === col} dir={sort.dir} onClick={() => toggleSort(col)} className={className}>
+          {label}
+        </SortTh>
+      );
+
       return (
         <div>
           <h2 className="text-lg font-semibold text-zinc-200 mb-4">🏆 Lopullinen tulostaulu</h2>
           <div className="overflow-x-auto rounded-xl border border-zinc-800">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-xs text-zinc-500 uppercase tracking-wider border-b border-zinc-800 bg-zinc-900/80">
-                  <th className="text-left px-4 py-3 font-medium">#</th>
-                  <th className="text-left px-4 py-3 font-medium">Pelaaja</th>
-                  <th className="text-right px-4 py-3 font-medium">Saldo</th>
-                  <th className="text-right px-4 py-3 font-medium">PnL</th>
-                  <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">PnL%</th>
-                  <th className="text-right px-4 py-3 font-medium hidden md:table-cell">Panokset</th>
-                  <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">V / H</th>
+                <tr className="text-xs uppercase tracking-wider border-b border-zinc-800 bg-zinc-900/80">
+                  {th('rank',    '#',        'text-left')}
+                  {th('name',    'Pelaaja',  'text-left')}
+                  {th('balance', 'Saldo',    'text-right')}
+                  {th('pnl',     'PnL',      'text-right')}
+                  {th('pct',     'PnL%',     'text-right hidden sm:table-cell')}
+                  {th('wagered', 'Panokset', 'text-right hidden md:table-cell')}
+                  {th('wins',    'V / H',    'text-right hidden sm:table-cell')}
                 </tr>
               </thead>
               <tbody>
-                {leaderboard.map((p, i) => {
-                  const pct = ((p.balance - starting_balance) / starting_balance * 100);
-                  const isTop3 = i < 3;
+                {sorted.map((p) => {
+                  const pct = (p.balance - starting_balance) / starting_balance * 100;
+                  const isTop3 = p.rank <= 3;
                   return (
                     <tr
                       key={p.username}
@@ -99,9 +150,16 @@
                         ${isTop3 ? 'bg-zinc-800/20' : ''}`}
                     >
                       <td className="px-4 py-3 w-10">
-                        {MEDALS[i] ?? <span className="text-zinc-600 font-mono text-xs">{p.rank}</span>}
+                        {MEDALS[p.rank - 1] ?? <span className="text-zinc-600 font-mono text-xs">{p.rank}</span>}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-white">{p.username}</td>
+                      <td className="px-4 py-3 font-semibold">
+                        <button
+                          onClick={() => onPlayerClick(p.username)}
+                          className="text-violet-300 hover:text-violet-100 hover:underline underline-offset-2 transition-colors"
+                        >
+                          {p.username}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 text-right font-mono font-semibold">{fmt(p.balance)}</td>
                       <td className={`px-4 py-3 text-right font-mono font-bold ${pnlCls(p.pnl)}`}>
                         {fmtSign(p.pnl)}
@@ -127,7 +185,7 @@
             </table>
           </div>
           <p className="text-xs text-zinc-600 mt-3">
-            Aloitussaldo: {fmt(starting_balance)} kaikilla · A = avoin kohde
+            Aloitussaldo: {fmt(starting_balance)} kaikilla · A = avoin kohde · Klikkaa sarakeotsikoita lajitellaksesi
           </p>
         </div>
       );
@@ -318,8 +376,7 @@
     }
 
     /* ── Players view ───────────────────────────────────────────────────────── */
-    function PlayersView({ data }) {
-      const [selected, setSelected] = useState(data.leaderboard[0]?.username || '');
+    function PlayersView({ data, selected, onSelect }) {
 
       const player = useMemo(
         () => data.leaderboard.find(p => p.username === selected),
@@ -359,7 +416,7 @@
             <h2 className="text-lg font-semibold text-zinc-200">👤 Pelaajan vedot</h2>
             <select
               value={selected}
-              onChange={e => setSelected(e.target.value)}
+              onChange={e => onSelect(e.target.value)}
               className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-600 cursor-pointer"
             >
               {data.leaderboard.map(p => (
@@ -622,17 +679,42 @@
       { id: 'stats',       label: '📊\u00a0Tilastot' },
     ];
 
+    function parseHash() {
+      const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      return { tab: params.get('tab') || 'leaderboard', player: params.get('player') || '' };
+    }
+
+    function navigate(tab, player) {
+      const params = new URLSearchParams();
+      params.set('tab', tab);
+      if (player) params.set('player', player);
+      window.location.hash = params.toString();
+    }
+
     function App() {
       const [data, setData]   = useState(null);
-      const [tab, setTab]     = useState('leaderboard');
+      const [nav, setNav]     = useState(parseHash);
       const [error, setError] = useState(null);
+
+      useEffect(() => {
+        const onHashChange = () => setNav(parseHash());
+        window.addEventListener('hashchange', onHashChange);
+        return () => window.removeEventListener('hashchange', onHashChange);
+      }, []);
 
       useEffect(() => {
         fetch('./data.json')
           .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-          .then(setData)
+          .then(d => {
+            setData(d);
+            if (!parseHash().player && d.leaderboard[0]) {
+              navigate(parseHash().tab, d.leaderboard[0].username);
+            }
+          })
           .catch(e => setError(e.message));
       }, []);
+
+      const { tab, player } = nav;
 
       if (error) return (
         <div className="min-h-screen flex items-center justify-center px-4">
@@ -689,7 +771,7 @@
             {TABS.map(t => (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => navigate(t.id, player)}
                 className={`flex-1 min-w-fit px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors
                   ${tab === t.id
                     ? 'bg-violet-600 text-white shadow'
@@ -701,9 +783,9 @@
           </nav>
 
           {/* Content */}
-          {tab === 'leaderboard' && <Leaderboard data={data} />}
+          {tab === 'leaderboard' && <Leaderboard data={data} onPlayerClick={u => navigate('players', u)} />}
           {tab === 'bets'        && <BetsList    data={data} />}
-          {tab === 'players'     && <PlayersView data={data} />}
+          {tab === 'players'     && <PlayersView data={data} selected={player} onSelect={u => navigate(tab, u)} />}
           {tab === 'stats'       && <StatsView   data={data} />}
 
           <footer className="mt-12 pt-6 border-t border-zinc-800 text-center text-xs text-zinc-700">
