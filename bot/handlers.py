@@ -118,19 +118,20 @@ async def _main_text(user, name: str = None, is_new: bool = False) -> str:
 
 async def _broadcast_new_bet(bot, bet: dict, options: list = None):
     telegram_ids = await db.get_all_telegram_ids()
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 Katso kohteita", callback_data="nav:kohteet")]])
     if options:
         opts_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in options)
-        text = texts.NEW_BET_NOTIFICATION_WINNER.format(
+        text = texts.H(texts.NEW_BET_NOTIFICATION_WINNER.format(
             id=bet["id"], title=bet["title"], options=opts_text
-        )
+        ))
     else:
-        text = texts.NEW_BET_NOTIFICATION_SIMPLE.format(
+        text = texts.H(texts.NEW_BET_NOTIFICATION_SIMPLE.format(
             id=bet["id"], title=bet["title"],
             yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
-        )
+        ))
     for tid in telegram_ids:
         try:
-            await bot.send_message(chat_id=tid, text=text)
+            await bot.send_message(chat_id=tid, text=text, reply_markup=keyboard)
         except Exception:
             logger.debug("Could not send new-bet notification to %s", tid)
 
@@ -140,9 +141,10 @@ async def _broadcast_bet_resolved(bot, bet: dict, result_fi: str, winners_text: 
     msg = texts.H(texts.BET_RESOLVED_MSG.format(
         id=bet["id"], title=bet["title"], result=result_fi, winners=winners_text
     ))
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎯 Omat vedot", callback_data="nav:omat")]])
     for tid in telegram_ids:
         try:
-            await bot.send_message(chat_id=tid, text=msg)
+            await bot.send_message(chat_id=tid, text=msg, reply_markup=keyboard)
         except Exception:
             logger.debug("Could not send resolution notification to %s", tid)
 

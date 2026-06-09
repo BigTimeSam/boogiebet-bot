@@ -283,15 +283,13 @@ ODDS_UPDATE_BET_NOT_FOUND = "❌ Kohdetta #{id} ei löydy tai se ei ole lukittu 
 NEW_BET_NOTIFICATION_SIMPLE = (
     "🎰 Uusi vetokohde avattu!\n\n"
     "#{id} {title}\n\n"
-    "✅ Kyllä @ {yes_odds:.2f}  |  ❌ Ei @ {no_odds:.2f}\n\n"
-    "Muista tehdä vetosi ajoissa! 👉 /kohteet"
+    "✅ Kyllä @ {yes_odds:.2f}  |  ❌ Ei @ {no_odds:.2f}"
 )
 
 NEW_BET_NOTIFICATION_WINNER = (
     "🎰 Uusi vetokohde avattu!\n\n"
     "#{id} {title}\n\n"
-    "{options}\n"
-    "Muista tehdä vetosi ajoissa! 👉 /kohteet"
+    "{options}"
 )
 
 INVALID_ODDS_CMD_SIMPLE = (
