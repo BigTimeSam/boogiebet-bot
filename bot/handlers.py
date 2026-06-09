@@ -1,10 +1,9 @@
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 import db
 import texts
-
-from telegram.error import BadRequest
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +43,12 @@ async def _delete_msg(bot, chat_id: int, message_id: int):
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception:
         pass
+
+
+async def _show_callback(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, text: str, reply_markup=None):
+    ctx.user_data["menu_chat_id"] = chat_id
+    ctx.user_data["menu_message_id"] = message_id
+    await _show(ctx, chat_id, text, reply_markup)
 
 
 def _option_rows(options, btn_maker):
@@ -312,41 +317,39 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     user = await db.get_user(query.from_user.id)
     if not user:
-        await _show(ctx, query.message.chat_id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
+        await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                             texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
 
     action = query.data.split(":", 1)[1]
+    chat_id = query.message.chat_id
 
     if action == "main":
-        await query.message.edit_text(
-            texts.H(await _main_text(user)),
-            reply_markup=await _main_keyboard(user),
-        )
+        await _show_callback(ctx, chat_id, query.message.message_id,
+                             texts.H(await _main_text(user)), await _main_keyboard(user))
     elif action == "saldo":
-        await query.message.edit_text(
-            texts.H(texts.BALANCE.format(balance=float(user["balance"]))),
-            reply_markup=back_keyboard(),
-        )
+        await _show_callback(ctx, chat_id, query.message.message_id,
+                             texts.H(texts.BALANCE.format(balance=float(user["balance"]))), back_keyboard())
     elif action == "kohteet":
         text, keyboard = await _build_bets(user)
-        await query.message.edit_text(texts.H(text), reply_markup=keyboard)
+        await _show_callback(ctx, chat_id, query.message.message_id, texts.H(text), keyboard)
     elif action == "omat":
         text, keyboard = await _build_my_bets(user)
-        await query.message.edit_text(texts.H(text), reply_markup=keyboard)
+        await _show_callback(ctx, chat_id, query.message.message_id, texts.H(text), keyboard)
     elif action == "tulokset":
         text = await _build_leaderboard()
-        await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
+        await _show_callback(ctx, chat_id, query.message.message_id, texts.H(text), back_keyboard())
     elif action == "voittajat":
         chunks = await _build_winners()
         keyboard = back_keyboard() if len(chunks) == 1 else None
-        await query.message.edit_text(texts.H(chunks[0]), reply_markup=keyboard)
+        await _show_callback(ctx, chat_id, query.message.message_id, texts.H(chunks[0]), keyboard)
         for i, chunk in enumerate(chunks[1:], 1):
             is_last = i == len(chunks) - 1
             await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
     elif action == "pnl":
         chunks = await _build_realized_pnl_all()
         keyboard = back_keyboard() if len(chunks) == 1 else None
-        await query.message.edit_text(texts.H(chunks[0]), reply_markup=keyboard)
+        await _show_callback(ctx, chat_id, query.message.message_id, texts.H(chunks[0]), keyboard)
         for i, chunk in enumerate(chunks[1:], 1):
             is_last = i == len(chunks) - 1
             await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
@@ -358,10 +361,8 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
             return
         ctx.user_data["state"] = AWAITING_BET_TITLE
-        await query.message.edit_text(
-            texts.H(texts.ASK_BET_TITLE),
-            reply_markup=_cancel_keyboard(),
-        )
+        await _show_callback(ctx, chat_id, query.message.message_id,
+                             texts.H(texts.ASK_BET_TITLE), _cancel_keyboard())
 
 
 async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -377,21 +378,18 @@ async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data.pop("state", None)
 
     bet_type = query.data.split(":")[1]
+    chat_id = query.message.chat_id
 
     if bet_type == "simple":
         ctx.user_data["state"] = AWAITING_BET_ODDS
         ctx.user_data[AWAITING_BET_ODDS] = {"title": title}
-        await query.message.edit_text(
-            texts.H(texts.ASK_BET_ODDS.format(title=title)),
-            reply_markup=_cancel_keyboard(),
-        )
+        await _show_callback(ctx, chat_id, query.message.message_id,
+                             texts.H(texts.ASK_BET_ODDS.format(title=title)), _cancel_keyboard())
     elif bet_type == "winner":
         ctx.user_data["state"] = AWAITING_WINNER_OPTIONS
         ctx.user_data[AWAITING_WINNER_OPTIONS] = {"title": title}
-        await query.message.edit_text(
-            texts.H(texts.ASK_WINNER_OPTIONS.format(title=title)),
-            reply_markup=_cancel_keyboard(),
-        )
+        await _show_callback(ctx, chat_id, query.message.message_id,
+                             texts.H(texts.ASK_WINNER_OPTIONS.format(title=title)), _cancel_keyboard())
 
 
 async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -412,7 +410,8 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     bet = await db.get_bet(bet_id)
     if not bet:
         await query.answer()
-        await query.message.edit_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), reply_markup=await _main_keyboard(user))
+        await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                             texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), await _main_keyboard(user))
         return
     if bet["status"] == "locked":
         await query.answer(texts.BET_LOCKED.format(id=bet_id), show_alert=True)
@@ -449,14 +448,12 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": side, "min_wager": bet_min, "max_wager": float(bet_max)}
 
     amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
-    await query.message.edit_text(
-        texts.H(texts.ASK_AMOUNT.format(
-            bet_id=bet_id, title=bet["title"], side=side_fi, odds=odds,
-            balance=float(user["balance"]), existing=existing_info,
-            amount_hint=amount_hint,
-        )),
-        reply_markup=_cancel_keyboard(),
-    )
+    await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                        texts.H(texts.ASK_AMOUNT.format(
+                            bet_id=bet_id, title=bet["title"], side=side_fi, odds=odds,
+                            balance=float(user["balance"]), existing=existing_info,
+                            amount_hint=amount_hint,
+                        )), _cancel_keyboard())
 
 
 async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -478,7 +475,8 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     bet = await db.get_bet(bet_id)
     if not bet:
         await query.answer()
-        await query.message.edit_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), reply_markup=await _main_keyboard(user))
+        await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                             texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), await _main_keyboard(user))
         return
     if bet["status"] == "locked":
         await query.answer(texts.BET_LOCKED.format(id=bet_id), show_alert=True)
@@ -518,14 +516,12 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id, "min_wager": bet_min, "max_wager": float(bet_max)}
 
     amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
-    await query.message.edit_text(
-        texts.H(texts.ASK_AMOUNT.format(
-            bet_id=bet_id, title=bet["title"], side=option["label"],
-            odds=float(option["odds"]), balance=float(user["balance"]),
-            existing=existing_info, amount_hint=amount_hint,
-        )),
-        reply_markup=_cancel_keyboard(),
-    )
+    await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                        texts.H(texts.ASK_AMOUNT.format(
+                            bet_id=bet_id, title=bet["title"], side=option["label"],
+                            odds=float(option["odds"]), balance=float(user["balance"]),
+                            existing=existing_info, amount_hint=amount_hint,
+                        )), _cancel_keyboard())
 
 
 async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -548,7 +544,7 @@ async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer(f"Cashout! {refunded:.0f} € palautettu saldolle (5% maksu pidätetty).")
     user = await db.get_user(query.from_user.id)
     text, keyboard = await _build_my_bets(user)
-    await query.message.edit_text(texts.H(text), reply_markup=keyboard)
+    await _show_callback(ctx, query.message.chat_id, query.message.message_id, texts.H(text), keyboard)
 
 
 async def cancel_input_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -564,7 +560,8 @@ async def cancel_input_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = texts.CANCEL_CREATION if state in creation_states else "❌ Peruutettu."
 
     user = await db.get_user(query.from_user.id)
-    await query.message.edit_text(texts.H(msg), reply_markup=await _main_keyboard(user))
+    await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                         texts.H(msg), await _main_keyboard(user))
 
 
 # ── Text message router ────────────────────────────────────────────────────────

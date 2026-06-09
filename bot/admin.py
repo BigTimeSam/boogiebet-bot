@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 import db
 import texts
-from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard, _broadcast_new_bet, _broadcast_bet_resolved
+from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard, _show_callback, _broadcast_new_bet, _broadcast_bet_resolved
 
 
 def _password():
@@ -462,13 +462,12 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         ctx.user_data["state"] = AWAITING_WAGER_LIMITS
         ctx.user_data[AWAITING_WAGER_LIMITS] = {"bet_id": bet_id}
-        await query.message.edit_text(
-            texts.H(texts.ASK_WAGER_LIMITS.format(
-                id=bet_id, title=bet["title"],
-                min=float(bet["min_wager"]), max=float(bet["max_wager"]),
-            )),
-            reply_markup=_cancel_keyboard(),
-        )
+        await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                             texts.H(texts.ASK_WAGER_LIMITS.format(
+                                 id=bet_id, title=bet["title"],
+                                 min=float(bet["min_wager"]), max=float(bet["max_wager"]),
+                             )),
+                             reply_markup=_cancel_keyboard())
 
     elif action == "finish":
         if await db.is_game_finished():
