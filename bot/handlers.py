@@ -633,33 +633,110 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not pending:
         ctx.user_data.pop("state", None)
         return
+    bet_min = pending.get("min_wager", MIN_WAGER)
+    bet_max = pending.get("max_wager", MAX_WAGER)
+    amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
+
     try:
         amount = float(update.message.text.strip().replace(",", "."))
         if amount != int(amount) or amount <= 0:
             raise ValueError
         amount = float(int(amount))
     except ValueError:
-        bet_min = pending.get("min_wager", MIN_WAGER)
-        bet_max = pending.get("max_wager", MAX_WAGER)
-        amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
-        await _show(ctx, update.effective_chat.id, texts.H(f"❌ Syötä kokonaisluku euroissa ({amount_hint}):"), _cancel_keyboard())
+        user = await db.get_user(update.effective_user.id)
+        await _show(ctx, update.effective_chat.id, texts.H(
+            f"❌ Syötä kokonaisluku euroissa ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"
+        ), _cancel_keyboard())
         return
 
     user = await db.get_user(update.effective_user.id)
     option_id = pending.get("option_id")
-    bet_min = pending.get("min_wager", MIN_WAGER)
-    bet_max = pending.get("max_wager", MAX_WAGER)
-    retryable = await _process_wager(
-        ctx, update.effective_chat.id, user, pending["bet_id"], pending["side"], amount,
-        is_admin=user["is_admin"], option_id=option_id,
-    )
-    if retryable:
-        amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
-        user = await db.get_user(update.effective_user.id)
-        await _show(ctx, update.effective_chat.id, texts.H(f"Syötä vetosumma euroissa ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"), _cancel_keyboard())
-    else:
+    bet_id = pending["bet_id"]
+    side = pending["side"]
+
+    bet = await db.get_bet(bet_id)
+    if not bet:
+        await _show(ctx, update.effective_chat.id, texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), await _main_keyboard(user))
         ctx.user_data.pop("state", None)
         ctx.user_data.pop(AWAITING_AMOUNT, None)
+        return
+    if bet["status"] == "locked":
+        await _show(ctx, update.effective_chat.id, texts.H(texts.BET_LOCKED.format(id=bet_id)), await _main_keyboard(user))
+        ctx.user_data.pop("state", None)
+        ctx.user_data.pop(AWAITING_AMOUNT, None)
+        return
+    if bet["status"] == "resolved":
+        await _show(ctx, update.effective_chat.id, texts.H(texts.BET_RESOLVED.format(id=bet_id)), await _main_keyboard(user))
+        ctx.user_data.pop("state", None)
+        ctx.user_data.pop(AWAITING_AMOUNT, None)
+        return
+    if bet["bet_type"] == "winner" and option_id is None:
+        await _show(ctx, update.effective_chat.id, texts.H("❌ Tämä on voittajaveto — käytä painikkeita panostamiseen."), await _main_keyboard(user))
+        ctx.user_data.pop("state", None)
+        ctx.user_data.pop(AWAITING_AMOUNT, None)
+        return
+
+    bet_min = float(bet["min_wager"])
+    bet_max = float(bet["max_wager"])
+    min_wager = max(MIN_WAGER, bet_min)
+
+    if amount < min_wager:
+        await _show(ctx, update.effective_chat.id, texts.H(
+            f"❌ Vedosumman täytyy olla {int(min_wager):.0f}–{int(bet_max):.0f} €.\n\n"
+            f"Syötä vetosumma uudelleen ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"
+        ), _cancel_keyboard())
+        return
+
+    existing = await db.get_user_wager(user["id"], bet_id)
+    existing_amount = float(existing["amount"]) if existing else 0.0
+    new_total = existing_amount + amount
+
+    if new_total > bet_max:
+        remaining = int(bet_max - existing_amount)
+        await _show(ctx, update.effective_chat.id, texts.H(
+            f"❌ Panosten maksimi on {int(bet_max)} € per kohde. "
+            f"Sinulla on jo {int(existing_amount)} € panostettuna — voit lisätä enintään {remaining} €.\n\n"
+            f"Syötä vetosumma uudelleen ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"
+        ), _cancel_keyboard())
+        return
+
+    if amount > float(user["balance"]):
+        await _show(ctx, update.effective_chat.id, texts.H(
+            f"{texts.NOT_ENOUGH_BALANCE.format(balance=float(user['balance']))}\n\n"
+            f"Syötä vetosumma uudelleen ({amount_hint}):"
+        ), _cancel_keyboard())
+        return
+
+    result = await db.place_wager(user["id"], bet_id, side, new_total, option_id=option_id)
+    if result[0] is None:
+        user = await db.get_user(user["telegram_id"])
+        await _show(ctx, update.effective_chat.id, texts.H(
+            f"{texts.NOT_ENOUGH_BALANCE.format(balance=float(user['balance']))}\n\n"
+            f"Syötä vetosumma uudelleen ({amount_hint}):"
+        ), _cancel_keyboard())
+        return
+    new_balance, updated = result
+
+    if option_id is not None:
+        options = await db.get_bet_options(bet_id)
+        option = next((o for o in options if o["id"] == option_id), None)
+        odds = float(option["odds"]) if option else 0
+        side_fi = option["label"] if option else side
+        side_icon = "🏅"
+    else:
+        odds = float(bet["yes_odds"]) if side == "yes" else float(bet["no_odds"])
+        side_fi = "Kyllä" if side == "yes" else "Ei"
+        side_icon = "✅" if side == "yes" else "❌"
+
+    payout = new_total * odds
+    template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
+    user = await db.get_user(user["telegram_id"])
+    await _show(ctx, update.effective_chat.id, texts.H(template.format(
+        bet_id=bet_id, title=bet["title"], side=side_fi, side_icon=side_icon,
+        amount=new_total, odds=odds, payout=payout, balance=new_balance,
+    )), await _main_keyboard(user))
+    ctx.user_data.pop("state", None)
+    ctx.user_data.pop(AWAITING_AMOUNT, None)
 
 
 async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
