@@ -118,8 +118,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "$DEPLOY_PATH"
+          docker compose up -d db
           docker compose build bot
-          docker compose up -d db bot
+          docker compose up -d bot
           docker image prune -f
 
       - name: Tag release
