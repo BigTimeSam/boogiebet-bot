@@ -462,7 +462,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         ctx.user_data["state"] = AWAITING_WAGER_LIMITS
         ctx.user_data[AWAITING_WAGER_LIMITS] = {"bet_id": bet_id}
-        await query.message.reply_text(
+        await query.message.edit_text(
             texts.H(texts.ASK_WAGER_LIMITS.format(
                 id=bet_id, title=bet["title"],
                 min=float(bet["min_wager"]), max=float(bet["max_wager"]),

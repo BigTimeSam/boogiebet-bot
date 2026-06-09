@@ -4,9 +4,10 @@ from telegram.ext import ContextTypes
 import db
 import texts
 
+from telegram.error import BadRequest
+
 logger = logging.getLogger(__name__)
 
-# user_data state keys
 AWAITING_AMOUNT = "awaiting_amount"
 AWAITING_BET_TITLE = "awaiting_bet_title"
 AWAITING_BET_TYPE = "awaiting_bet_type"
@@ -19,8 +20,33 @@ MAX_WAGER = 200.0
 MAX_WINNER_OPTIONS = 6
 
 
+async def _show(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, reply_markup=None):
+    msg_id = ctx.user_data.get("menu_message_id")
+    if msg_id:
+        try:
+            await ctx.bot.edit_message_text(
+                text=text, chat_id=chat_id, message_id=msg_id, reply_markup=reply_markup,
+            )
+            return
+        except BadRequest as e:
+            if "message is not modified" in str(e).lower():
+                return
+            logger.debug("Could not edit menu message %s: %s", msg_id, e)
+        except Exception as e:
+            logger.debug("Could not edit menu message %s: %s", msg_id, e)
+    msg = await ctx.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+    ctx.user_data["menu_chat_id"] = chat_id
+    ctx.user_data["menu_message_id"] = msg.message_id
+
+
+async def _delete_msg(bot, chat_id: int, message_id: int):
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+
 def _option_rows(options, btn_maker):
-    """Split options into rows of max 2 buttons each."""
     rows = []
     for i in range(0, len(options), 2):
         rows.append([btn_maker(o) for o in options[i:i + 2]])
@@ -86,7 +112,6 @@ async def _main_text(user, name: str = None, is_new: bool = False) -> str:
 
 
 async def _broadcast_new_bet(bot, bet: dict, options: list = None):
-    """Send a new-bet notification to all registered users. Silently skips unreachable users."""
     telegram_ids = await db.get_all_telegram_ids()
     if options:
         opts_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in options)
@@ -106,7 +131,6 @@ async def _broadcast_new_bet(bot, bet: dict, options: list = None):
 
 
 async def _broadcast_bet_resolved(bot, bet: dict, result_fi: str, winners_text: str):
-    """Broadcast bet resolution result to all registered users."""
     telegram_ids = await db.get_all_telegram_ids()
     msg = texts.H(texts.BET_RESOLVED_MSG.format(
         id=bet["id"], title=bet["title"], result=result_fi, winners=winners_text
@@ -121,72 +145,82 @@ async def _broadcast_bet_resolved(bot, bet: dict, result_fi: str, winners_text: 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg = update.effective_user
     user, created = await db.get_or_create_user(tg.id, tg.username or tg.first_name)
-    await update.message.reply_text(
-        texts.H(await _main_text(user, name=tg.first_name, is_new=created)),
-        reply_markup=await _main_keyboard(user),
-    )
+    for key in (AWAITING_AMOUNT, AWAITING_BET_TITLE, AWAITING_BET_ODDS,
+                AWAITING_BET_TYPE, AWAITING_WINNER_OPTIONS, AWAITING_WAGER_LIMITS, "state"):
+        ctx.user_data.pop(key, None)
+    text = texts.H(await _main_text(user, name=tg.first_name, is_new=created))
+    keyboard = await _main_keyboard(user)
+    await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
+    await _show(ctx, update.effective_chat.id, text, keyboard)
 
 
 async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     is_admin = user["is_admin"] if user else False
-    await update.message.reply_text(
-        texts.H(texts.HELP_TEXT),
-        reply_markup=await _main_keyboard(user) if user else main_menu_keyboard(),
-    )
+    keyboard = await _main_keyboard(user) if user else main_menu_keyboard()
+    await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
+    await _show(ctx, update.effective_chat.id, texts.H(texts.HELP_TEXT), keyboard)
 
 
 async def cmd_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
-        await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
-    await update.message.reply_text(texts.H(texts.BALANCE.format(balance=float(user["balance"]))))
+    await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
+    await _show(ctx, update.effective_chat.id, texts.H(texts.BALANCE.format(balance=float(user["balance"]))), back_keyboard())
 
 
 async def cmd_bets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
-        await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
     text, keyboard = await _build_bets(user)
-    await update.message.reply_text(texts.H(text), reply_markup=keyboard)
+    await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
+    await _show(ctx, update.effective_chat.id, texts.H(text), keyboard)
 
 
 async def cmd_my_bets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
-        await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
     text, keyboard = await _build_my_bets(user)
-    await update.message.reply_text(texts.H(text), reply_markup=keyboard)
+    await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
+    await _show(ctx, update.effective_chat.id, texts.H(text), keyboard)
 
 
 async def cmd_results(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(update.effective_user.id)
+    if not user:
+        await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
+        return
     text = await _build_leaderboard()
-    await update.message.reply_text(texts.H(text), reply_markup=back_keyboard())
+    await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
+    await _show(ctx, update.effective_chat.id, texts.H(text), back_keyboard())
 
 
 async def cmd_place_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
-        await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
     if await db.is_game_finished():
-        await update.message.reply_text(texts.H(texts.GAME_OVER_BLOCK))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.GAME_OVER_BLOCK), await _main_keyboard(user))
         return
     args = ctx.args
     if len(args) != 3:
-        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/vetoa <id> <kyllä|ei> <summa>")))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_COMMAND.format(usage="/vetoa <id> <kyllä|ei> <summa>")), back_keyboard())
         return
     try:
         bet_id = int(args[0])
     except ValueError:
-        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/vetoa <id> <kyllä|ei> <summa>")))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_COMMAND.format(usage="/vetoa <id> <kyllä|ei> <summa>")), back_keyboard())
         return
     side_input = args[1].lower()
     if side_input not in ("kyllä", "kylla", "ei"):
-        await update.message.reply_text(texts.H(texts.INVALID_SIDE))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_SIDE), back_keyboard())
         return
     side = "yes" if side_input in ("kyllä", "kylla") else "no"
     try:
@@ -194,31 +228,31 @@ async def cmd_place_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if amount <= 0:
             raise ValueError
     except ValueError:
-        await update.message.reply_text(texts.H(texts.INVALID_AMOUNT))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_AMOUNT), back_keyboard())
         return
-    await _process_wager(update.message, user, bet_id, side, amount)
+    await _process_wager(ctx, update.effective_chat.id, user, bet_id, side, amount)
 
 
 async def cmd_new_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
-        await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
     if not user["is_admin"]:
-        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.NOT_ADMIN), await _main_keyboard(user))
         return
     if await db.is_game_finished():
-        await update.message.reply_text(texts.H(texts.GAME_OVER_BLOCK))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.GAME_OVER_BLOCK), await _main_keyboard(user))
         return
     text = " ".join(ctx.args)
     if "|" not in text:
-        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/uusiveto <otsikko> | <kyllä_kerroin> <ei_kerroin>")))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_COMMAND.format(usage="/uusiveto <otsikko> | <kyllä_kerroin> <ei_kerroin>")), await _main_keyboard(user))
         return
     parts = text.split("|", 1)
     title = parts[0].strip()
     odds_part = parts[1].strip().split()
     if not title or len(odds_part) != 2:
-        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/uusiveto <otsikko> | <kyllä_kerroin> <ei_kerroin>")))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_COMMAND.format(usage="/uusiveto <otsikko> | <kyllä_kerroin> <ei_kerroin>")), await _main_keyboard(user))
         return
     try:
         yes_odds = float(odds_part[0].replace(",", "."))
@@ -226,44 +260,44 @@ async def cmd_new_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if yes_odds <= 1.0 or no_odds <= 1.0:
             raise ValueError
     except ValueError:
-        await update.message.reply_text(texts.H(texts.INVALID_ODDS))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_ODDS), await _main_keyboard(user))
         return
     bet = await db.create_bet(title, yes_odds, no_odds, user["id"])
-    await update.message.reply_text(texts.H(texts.BET_CREATED.format(
+    await _show(ctx, update.effective_chat.id, texts.H(texts.BET_CREATED.format(
         id=bet["id"], title=bet["title"],
         yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
-    )))
+    )), await _main_keyboard(user))
     await _broadcast_new_bet(ctx.bot, bet)
 
 
 async def cmd_delete_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user:
-        await update.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
     if not user["is_admin"]:
-        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.NOT_ADMIN), await _main_keyboard(user))
         return
     if await db.is_game_finished():
-        await update.message.reply_text(texts.H(texts.GAME_OVER_BLOCK))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.GAME_OVER_BLOCK), await _main_keyboard(user))
         return
     if not ctx.args:
-        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/poistakohde <id>")))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_COMMAND.format(usage="/poistakohde <id>")), await _main_keyboard(user))
         return
     try:
         bet_id = int(ctx.args[0])
     except ValueError:
-        await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/poistakohde <id>")))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_COMMAND.format(usage="/poistakohde <id>")), await _main_keyboard(user))
         return
     bet = await db.get_bet(bet_id)
     if not bet:
-        await update.message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), await _main_keyboard(user))
         return
     deleted = await db.delete_bet(bet_id)
     if deleted:
-        await update.message.reply_text(texts.H(texts.BET_DELETED.format(id=bet_id)))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.BET_DELETED.format(id=bet_id)), await _main_keyboard(user))
     else:
-        await update.message.reply_text(texts.H(texts.BET_DELETE_FORBIDDEN))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.BET_DELETE_FORBIDDEN), await _main_keyboard(user))
 
 
 # ── Callback handlers ──────────────────────────────────────────────────────────
@@ -278,7 +312,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     user = await db.get_user(query.from_user.id)
     if not user:
-        await query.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, query.message.chat_id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
 
     action = query.data.split(":", 1)[1]
@@ -304,13 +338,15 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(texts.H(text), reply_markup=back_keyboard())
     elif action == "voittajat":
         chunks = await _build_winners()
-        await query.message.edit_text(texts.H(chunks[0]), reply_markup=None if len(chunks) > 1 else back_keyboard())
+        keyboard = back_keyboard() if len(chunks) == 1 else None
+        await query.message.edit_text(texts.H(chunks[0]), reply_markup=keyboard)
         for i, chunk in enumerate(chunks[1:], 1):
             is_last = i == len(chunks) - 1
             await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
     elif action == "pnl":
         chunks = await _build_realized_pnl_all()
-        await query.message.edit_text(texts.H(chunks[0]), reply_markup=None if len(chunks) > 1 else back_keyboard())
+        keyboard = back_keyboard() if len(chunks) == 1 else None
+        await query.message.edit_text(texts.H(chunks[0]), reply_markup=keyboard)
         for i, chunk in enumerate(chunks[1:], 1):
             is_last = i == len(chunks) - 1
             await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
@@ -322,7 +358,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
             return
         ctx.user_data["state"] = AWAITING_BET_TITLE
-        await query.message.reply_text(
+        await query.message.edit_text(
             texts.H(texts.ASK_BET_TITLE),
             reply_markup=_cancel_keyboard(),
         )
@@ -345,14 +381,14 @@ async def bet_type_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if bet_type == "simple":
         ctx.user_data["state"] = AWAITING_BET_ODDS
         ctx.user_data[AWAITING_BET_ODDS] = {"title": title}
-        await query.message.reply_text(
+        await query.message.edit_text(
             texts.H(texts.ASK_BET_ODDS.format(title=title)),
             reply_markup=_cancel_keyboard(),
         )
     elif bet_type == "winner":
         ctx.user_data["state"] = AWAITING_WINNER_OPTIONS
         ctx.user_data[AWAITING_WINNER_OPTIONS] = {"title": title}
-        await query.message.reply_text(
+        await query.message.edit_text(
             texts.H(texts.ASK_WINNER_OPTIONS.format(title=title)),
             reply_markup=_cancel_keyboard(),
         )
@@ -364,7 +400,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(query.from_user.id)
     if not user:
         await query.answer()
-        await query.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, query.message.chat_id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
     if await db.is_game_finished():
         await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
@@ -376,7 +412,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     bet = await db.get_bet(bet_id)
     if not bet:
         await query.answer()
-        await query.message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
+        await query.message.edit_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), reply_markup=await _main_keyboard(user))
         return
     if bet["status"] == "locked":
         await query.answer(texts.BET_LOCKED.format(id=bet_id), show_alert=True)
@@ -413,7 +449,7 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": side, "min_wager": bet_min, "max_wager": float(bet_max)}
 
     amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
-    await query.message.reply_text(
+    await query.message.edit_text(
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=side_fi, odds=odds,
             balance=float(user["balance"]), existing=existing_info,
@@ -429,7 +465,7 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(query.from_user.id)
     if not user:
         await query.answer()
-        await query.message.reply_text(texts.H("Rekisteröidy ensin komennolla /start"))
+        await _show(ctx, query.message.chat_id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
     if await db.is_game_finished():
         await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
@@ -442,7 +478,7 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     bet = await db.get_bet(bet_id)
     if not bet:
         await query.answer()
-        await query.message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
+        await query.message.edit_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), reply_markup=await _main_keyboard(user))
         return
     if bet["status"] == "locked":
         await query.answer(texts.BET_LOCKED.format(id=bet_id), show_alert=True)
@@ -482,7 +518,7 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data[AWAITING_AMOUNT] = {"bet_id": bet_id, "side": "opt", "option_id": option_id, "min_wager": bet_min, "max_wager": float(bet_max)}
 
     amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
-    await query.message.reply_text(
+    await query.message.edit_text(
         texts.H(texts.ASK_AMOUNT.format(
             bet_id=bet_id, title=bet["title"], side=option["label"],
             odds=float(option["odds"]), balance=float(user["balance"]),
@@ -490,7 +526,6 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )),
         reply_markup=_cancel_keyboard(),
     )
-
 
 
 async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -536,6 +571,9 @@ async def cancel_input_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def text_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     state = ctx.user_data.get("state")
+    if state is None:
+        return
+    await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
     if state == AWAITING_AMOUNT:
         await _handle_amount(update, ctx)
     elif state == AWAITING_BET_TITLE:
@@ -559,10 +597,10 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             raise ValueError
         amount = float(int(amount))
     except ValueError:
-        await update.message.reply_text(
-            texts.H(texts.INVALID_AMOUNT),
-            reply_markup=_cancel_keyboard(),
-        )
+        bet_min = pending.get("min_wager", MIN_WAGER)
+        bet_max = pending.get("max_wager", MAX_WAGER)
+        amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
+        await _show(ctx, update.effective_chat.id, texts.H(f"❌ Syötä kokonaisluku euroissa ({amount_hint}):"), _cancel_keyboard())
         return
 
     user = await db.get_user(update.effective_user.id)
@@ -570,15 +608,13 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     bet_min = pending.get("min_wager", MIN_WAGER)
     bet_max = pending.get("max_wager", MAX_WAGER)
     retryable = await _process_wager(
-        update.message, user, pending["bet_id"], pending["side"], amount,
+        ctx, update.effective_chat.id, user, pending["bet_id"], pending["side"], amount,
         is_admin=user["is_admin"], option_id=option_id,
     )
     if retryable:
         amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
-        await update.message.reply_text(
-            reply_markup=_cancel_keyboard(),
-            text=texts.H(f"Syötä vetosumma euroissa ({amount_hint}):"),
-        )
+        user = await db.get_user(update.effective_user.id)
+        await _show(ctx, update.effective_chat.id, texts.H(f"Syötä vetosumma euroissa ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"), _cancel_keyboard())
     else:
         ctx.user_data.pop("state", None)
         ctx.user_data.pop(AWAITING_AMOUNT, None)
@@ -587,31 +623,25 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def _handle_bet_title(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
-        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.NOT_ADMIN), await _main_keyboard(user))
         ctx.user_data.pop("state", None)
         return
 
     title = update.message.text.strip()
     if not title:
-        await update.message.reply_text(
-            texts.H(texts.ASK_BET_TITLE),
-            reply_markup=_cancel_keyboard(),
-        )
+        await _show(ctx, update.effective_chat.id, texts.H(texts.ASK_BET_TITLE), _cancel_keyboard())
         return
 
     ctx.user_data["state"] = AWAITING_BET_TYPE
     ctx.user_data[AWAITING_BET_TYPE] = {"title": title}
 
-    await update.message.reply_text(
-        texts.H(texts.ASK_BET_TYPE.format(title=title)),
-        reply_markup=_bet_type_keyboard(),
-    )
+    await _show(ctx, update.effective_chat.id, texts.H(texts.ASK_BET_TYPE.format(title=title)), _bet_type_keyboard())
 
 
 async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
-        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.NOT_ADMIN), await _main_keyboard(user))
         ctx.user_data.pop("state", None)
         return
 
@@ -627,26 +657,23 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if yes_odds <= 1.0 or no_odds <= 1.0:
             raise ValueError
     except ValueError:
-        await update.message.reply_text(texts.H(texts.INVALID_ODDS))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_ODDS), _cancel_keyboard())
         return
 
     ctx.user_data.pop("state", None)
     ctx.user_data.pop(AWAITING_BET_ODDS, None)
 
     bet = await db.create_bet(title, yes_odds, no_odds, user["id"])
-    await update.message.reply_text(
-        texts.H(texts.BET_CREATED.format(
-            id=bet["id"], title=bet["title"],
-            yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
-        )),
-        reply_markup=await _main_keyboard(user),
-    )
+    await _show(ctx, update.effective_chat.id, texts.H(texts.BET_CREATED.format(
+        id=bet["id"], title=bet["title"],
+        yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
+    )), await _main_keyboard(user))
 
 
 async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
-        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.NOT_ADMIN), await _main_keyboard(user))
         ctx.user_data.pop("state", None)
         return
 
@@ -657,7 +684,7 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     options = []
     for line in lines:
         if "@" not in line:
-            await update.message.reply_text(texts.H(texts.INVALID_WINNER_OPTIONS))
+            await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_WINNER_OPTIONS), _cancel_keyboard())
             return
         parts = line.rsplit("@", 1)
         label = parts[0].strip()
@@ -666,16 +693,16 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             if odds <= 1.0 or not label:
                 raise ValueError
         except ValueError:
-            await update.message.reply_text(texts.H(texts.INVALID_WINNER_OPTIONS))
+            await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_WINNER_OPTIONS), _cancel_keyboard())
             return
         options.append({"label": label, "odds": odds})
 
     if len(options) < 2:
-        await update.message.reply_text(texts.H(texts.INVALID_WINNER_OPTIONS))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_WINNER_OPTIONS), _cancel_keyboard())
         return
 
     if len(options) > MAX_WINNER_OPTIONS:
-        await update.message.reply_text(texts.H(texts.TOO_MANY_WINNER_OPTIONS.format(max=MAX_WINNER_OPTIONS)))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.TOO_MANY_WINNER_OPTIONS.format(max=MAX_WINNER_OPTIONS)), _cancel_keyboard())
         return
 
     ctx.user_data.pop("state", None)
@@ -683,18 +710,13 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
     bet = await db.create_winner_bet(title, options, user["id"])
     options_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in bet["options"])
-    await update.message.reply_text(
-        texts.H(texts.WINNER_BET_CREATED.format(id=bet["id"], title=bet["title"], options=options_text)),
-        reply_markup=await _main_keyboard(user),
-    )
+    await _show(ctx, update.effective_chat.id, texts.H(texts.WINNER_BET_CREATED.format(id=bet["id"], title=bet["title"], options=options_text)), await _main_keyboard(user))
 
-
-# ── Shared helpers ─────────────────────────────────────────────────────────────
 
 async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
-        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
+        await _show(ctx, update.effective_chat.id, texts.H(texts.NOT_ADMIN), await _main_keyboard(user))
         ctx.user_data.pop("state", None)
         return
 
@@ -716,10 +738,7 @@ async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if new_min < MIN_WAGER or new_max > MAX_WAGER or new_min > new_max:
             raise ValueError
     except ValueError:
-        await update.message.reply_text(
-            texts.H(texts.INVALID_WAGER_LIMITS),
-            reply_markup=_cancel_keyboard(),
-        )
+        await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_WAGER_LIMITS), _cancel_keyboard())
         return
 
     bet_id = pending["bet_id"]
@@ -730,40 +749,37 @@ async def _handle_wager_limits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     bet = await db.get_bet(bet_id)
     if not updated or not bet:
-        await update.message.reply_text(texts.H("❌ Panosrajojen asetus epäonnistui. Kohde ei ehkä ole enää muokattavissa."), reply_markup=await _main_keyboard(user))
+        await _show(ctx, update.effective_chat.id, texts.H("❌ Panosrajojen asetus epäonnistui. Kohde ei ehkä ole enää muokattavissa."), await _main_keyboard(user))
         return
 
-    await update.message.reply_text(
-        texts.H(texts.WAGER_LIMITS_SET.format(id=bet_id, title=bet["title"], min=new_min, max=new_max)),
-        reply_markup=await _main_keyboard(user),
-    )
+    await _show(ctx, update.effective_chat.id, texts.H(texts.WAGER_LIMITS_SET.format(id=bet_id, title=bet["title"], min=new_min, max=new_max)), await _main_keyboard(user))
 
-async def _process_wager(message, user, bet_id: int, side: str, amount: float,
-                         is_admin=False, option_id: int = None):
-    """Returns True if a retryable validation error occurred, False otherwise."""
+
+async def _process_wager(ctx, chat_id, user, bet_id: int, side: str, amount: float,
+                         is_admin=False, option_id=None):
     bet = await db.get_bet(bet_id)
     if not bet:
-        await message.reply_text(texts.H(texts.BET_NOT_FOUND.format(id=bet_id)))
+        await _show(ctx, chat_id, texts.H(texts.BET_NOT_FOUND.format(id=bet_id)), await _main_keyboard(user))
         return False
     if bet["status"] == "locked":
-        await message.reply_text(texts.H(texts.BET_LOCKED.format(id=bet_id)))
+        await _show(ctx, chat_id, texts.H(texts.BET_LOCKED.format(id=bet_id)), await _main_keyboard(user))
         return False
     if bet["status"] == "resolved":
-        await message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
+        await _show(ctx, chat_id, texts.H(texts.BET_RESOLVED.format(id=bet_id)), await _main_keyboard(user))
         return False
     if bet["bet_type"] == "winner" and option_id is None:
-        await message.reply_text(texts.H("❌ Tämä on voittajaveto — käytä painikkeita panostamiseen."))
+        await _show(ctx, chat_id, texts.H("❌ Tämä on voittajaveto — käytä painikkeita panostamiseen."), await _main_keyboard(user))
         return False
 
     if amount < MIN_WAGER:
-        await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)))
+        await _show(ctx, chat_id, texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)), _cancel_keyboard())
         return True
 
     bet_min = float(bet["min_wager"])
     bet_max = float(bet["max_wager"])
 
     if amount < bet_min:
-        await message.reply_text(texts.H(texts.MAX_WAGER_EXCEEDED.format(min=bet_min, max=bet_max)))
+        await _show(ctx, chat_id, texts.H(texts.MAX_WAGER_EXCEEDED.format(min=bet_min, max=bet_max)), _cancel_keyboard())
         return True
 
     existing = await db.get_user_wager(user["id"], bet_id)
@@ -772,19 +788,20 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
 
     if new_total > bet_max:
         remaining = int(bet_max - existing_amount)
-        await message.reply_text(texts.H(
+        await _show(ctx, chat_id, texts.H(
             f"❌ Panosten maksimi on {int(bet_max)} € per kohde. "
             f"Sinulla on jo {int(existing_amount)} € panostettuna — voit lisätä enintään {remaining} €."
-        ))
+        ), _cancel_keyboard())
         return True
 
     if amount > float(user["balance"]):
-        await message.reply_text(texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))))
+        await _show(ctx, chat_id, texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))), _cancel_keyboard())
         return True
 
     result = await db.place_wager(user["id"], bet_id, side, new_total, option_id=option_id)
     if result[0] is None:
-        await message.reply_text(texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))))
+        user = await db.get_user(user["telegram_id"])
+        await _show(ctx, chat_id, texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))), _cancel_keyboard())
         return True
     new_balance, updated = result
 
@@ -801,13 +818,11 @@ async def _process_wager(message, user, bet_id: int, side: str, amount: float,
 
     payout = new_total * odds
     template = texts.WAGER_UPDATED if updated else texts.WAGER_PLACED
-    await message.reply_text(
-        texts.H(template.format(
-            bet_id=bet_id, title=bet["title"], side=side_fi, side_icon=side_icon,
-            amount=new_total, odds=odds, payout=payout, balance=new_balance,
-        )),
-        reply_markup=await _main_keyboard(user),
-    )
+    user = await db.get_user(user["telegram_id"])
+    await _show(ctx, chat_id, texts.H(template.format(
+        bet_id=bet_id, title=bet["title"], side=side_fi, side_icon=side_icon,
+        amount=new_total, odds=odds, payout=payout, balance=new_balance,
+    )), await _main_keyboard(user))
     return False
 
 
@@ -860,7 +875,7 @@ async def _build_bets(user):
                 ])
 
     keyboard.append(bottom_row)
-    if not keyboard[:-1]:  # only bottom_row remains — all bets were locked
+    if not keyboard[:-1]:
         msg += texts.ALL_BETS_LOCKED
     return msg, InlineKeyboardMarkup(keyboard)
 
@@ -914,7 +929,6 @@ async def _build_winners() -> list[str]:
     if not rows:
         return [texts.WINNERS_NO_RESOLVED]
 
-    # Group rows by bet
     bets_seen: list[int] = []
     by_bet: dict[int, list] = {}
     for r in rows:
@@ -924,7 +938,6 @@ async def _build_winners() -> list[str]:
             by_bet[bid] = []
         by_bet[bid].append(r)
 
-    # Build per-bet text blocks
     blocks: list[str] = []
     for bid in bets_seen:
         wagers = by_bet[bid]
@@ -967,7 +980,6 @@ async def _build_winners() -> list[str]:
 
         blocks.append(block)
 
-    # Pack blocks into chunks that fit within Telegram's limit (header ~700 chars)
     limit = 3200
     chunks: list[str] = []
     current = texts.WINNERS_HEADER
@@ -980,6 +992,7 @@ async def _build_winners() -> list[str]:
         chunks.append(current.rstrip())
 
     return chunks if chunks else [texts.WINNERS_NO_RESOLVED]
+
 
 async def _build_realized_pnl_all() -> list[str]:
     PNL_HEADER = "📈 Realisoitunut PnL\n\n"
