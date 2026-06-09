@@ -682,7 +682,7 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if amount < min_wager:
         await _show(ctx, update.effective_chat.id, texts.H(
-            f"❌ Vedosumman täytyy olla {int(min_wager):.0f}–{int(bet_max):.0f} €.\n\n"
+            f"❌ Vetosumman täytyy olla {int(min_wager):.0f}–{int(bet_max):.0f} €.\n\n"
             f"Syötä vetosumma uudelleen ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"
         ), _cancel_keyboard())
         return
