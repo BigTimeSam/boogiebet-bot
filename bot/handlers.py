@@ -119,19 +119,20 @@ async def _main_text(user, name: str = None, is_new: bool = False) -> str:
 _notification_msgs: dict[int, tuple[int, int]] = {}
 
 
-async def _build_open_bets_text():
+async def _build_open_bets_text(new_bet_id: int = None):
     bets = await db.get_active_bets()
     open_bets = [b for b in bets if b["status"] == "open"]
     if not open_bets:
         return None
     lines = ["🎰 Avatut vetokohteet\n"]
     for b in open_bets:
+        marker = " 🆕" if b["id"] == new_bet_id else ""
         if b["bet_type"] == "winner":
             options = await db.get_bet_options(b["id"])
             opts = ", ".join(f"{o['label']} @ {float(o['odds']):.2f}" for o in options)
-            lines.append(f"#{b['id']} {b['title']} — {opts}")
+            lines.append(f"#{b['id']} {b['title']}{marker} — {opts}")
         else:
-            lines.append(f"#{b['id']} {b['title']} — Kyllä @ {float(b['yes_odds']):.2f} | Ei @ {float(b['no_odds']):.2f}")
+            lines.append(f"#{b['id']} {b['title']}{marker} — Kyllä @ {float(b['yes_odds']):.2f} | Ei @ {float(b['no_odds']):.2f}")
     return "\n".join(lines)
 
 
@@ -140,17 +141,17 @@ async def _broadcast_new_bet(bot, bet: dict, options: list = None):
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 Katso kohteita", callback_data="nav:kohteet")]])
     if options:
         opts_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in options)
-        text = texts.H(texts.NEW_BET_NOTIFICATION_WINNER.format(
+        text = texts.NEW_BET_NOTIFICATION_WINNER.format(
             id=bet["id"], title=bet["title"], options=opts_text
-        ))
+        )
     else:
-        text = texts.H(texts.NEW_BET_NOTIFICATION_SIMPLE.format(
+        text = texts.NEW_BET_NOTIFICATION_SIMPLE.format(
             id=bet["id"], title=bet["title"],
             yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
-        ))
-    consolidated = await _build_open_bets_text()
+        )
+    consolidated = await _build_open_bets_text(new_bet_id=bet["id"])
     for tid in telegram_ids:
-        msg_text = texts.H(consolidated) if consolidated else text
+        msg_text = consolidated if consolidated else text
         msg_kb = keyboard
         prev = _notification_msgs.get(tid)
         sent = False
