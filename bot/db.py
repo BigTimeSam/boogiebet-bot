@@ -1,11 +1,52 @@
-import asyncpg
+import logging
 import os
 
+import asyncpg
+
+logger = logging.getLogger(__name__)
+
 _pool = None
+
+# Directory holding numbered, idempotent migration files (NNN_description.sql),
+# applied in filename order and tracked in the schema_migrations table.
+MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "migrations")
+
+
+async def _apply_migrations(conn):
+    """Apply any not-yet-recorded migration files from MIGRATIONS_DIR in order.
+
+    This is the forward path for schema changes: drop a new NNN_*.sql file into
+    migrations/ rather than appending another ALTER to the baseline below. Each
+    file is applied at most once and recorded in schema_migrations.
+    """
+    await conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        "version TEXT PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT NOW())"
+    )
+    if not os.path.isdir(MIGRATIONS_DIR):
+        return
+    applied = {
+        r["version"] for r in await conn.fetch("SELECT version FROM schema_migrations")
+    }
+    files = sorted(f for f in os.listdir(MIGRATIONS_DIR) if f.endswith(".sql"))
+    for fname in files:
+        if fname in applied:
+            continue
+        with open(os.path.join(MIGRATIONS_DIR, fname), encoding="utf-8") as fh:
+            sql = fh.read()
+        async with conn.transaction():
+            await conn.execute(sql)
+            await conn.execute(
+                "INSERT INTO schema_migrations (version) VALUES ($1)", fname
+            )
+        logger.info("Applied migration %s", fname)
 
 
 async def _migrate(pool):
     async with pool.acquire() as conn:
+        # Baseline reconciliation: idempotent ALTERs that bring an older live DB
+        # up to the init.sql schema. New changes go in migrations/ (see
+        # _apply_migrations), not here.
         await conn.execute(
             "ALTER TABLE bets ADD COLUMN IF NOT EXISTS bet_type VARCHAR(10) NOT NULL DEFAULT 'simple'"
         )
@@ -45,6 +86,7 @@ async def _migrate(pool):
         await conn.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_balance NUMERIC(10,2) NOT NULL DEFAULT 0"
         )
+        await _apply_migrations(conn)
 
 
 async def get_pool():
@@ -295,10 +337,16 @@ async def resolve_bet(bet_id: int, result: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute(
-                "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2",
+            # Guard against double-resolve: only a currently-locked bet can be
+            # resolved, and the conditional UPDATE makes payout idempotent even
+            # if two resolve calls race past the handler-level status check.
+            updated = await conn.execute(
+                "UPDATE bets SET status = 'resolved', result = $1 "
+                "WHERE id = $2 AND status = 'locked'",
                 result, bet_id,
             )
+            if updated != "UPDATE 1":
+                return None
             wagers = await conn.fetch(
                 "SELECT w.*, u.telegram_id, u.username, b.yes_odds, b.no_odds "
                 "FROM wagers w "
@@ -321,6 +369,10 @@ async def resolve_bet(bet_id: int, result: str):
                         "profit": payout,
                         "balance": float(new_balance),
                     })
+            logger.info(
+                "Resolved bet %s as '%s': %d winner(s), %.2f € paid out",
+                bet_id, result, len(winners), sum(x["profit"] for x in winners),
+            )
             return winners
 
 
@@ -334,10 +386,15 @@ async def resolve_winner_bet(bet_id: int, winning_option_id: int):
             )
             if not valid:
                 return None
-            await conn.execute(
-                "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2",
+            # Same idempotent guard as resolve_bet: only resolve a locked bet,
+            # so a race can never pay winners twice.
+            updated = await conn.execute(
+                "UPDATE bets SET status = 'resolved', result = $1 "
+                "WHERE id = $2 AND status = 'locked'",
                 str(winning_option_id), bet_id,
             )
+            if updated != "UPDATE 1":
+                return None
             wagers = await conn.fetch(
                 "SELECT w.*, u.telegram_id, u.username, bo.odds "
                 "FROM wagers w "
@@ -359,6 +416,10 @@ async def resolve_winner_bet(bet_id: int, winning_option_id: int):
                         "profit": payout,
                         "balance": float(new_balance),
                     })
+            logger.info(
+                "Resolved winner bet %s (option %s): %d winner(s), %.2f € paid out",
+                bet_id, winning_option_id, len(winners), sum(x["profit"] for x in winners),
+            )
             return winners
 
 
@@ -370,7 +431,7 @@ async def get_user_wager(user_id: int, bet_id: int):
     return dict(row) if row else None
 
 
-async def place_wager(user_id: int, bet_id: int, side: str, amount: float, option_id: int = None):
+async def place_wager(user_id: int, bet_id: int, side: str, amount: float, option_id: int | None = None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -526,8 +587,10 @@ async def revert_resolved_bet(bet_id: int) -> bool:
                 )
                 for w in wagers:
                     payout = float(w["amount"]) * float(w["odds"])
+                    # Clamp at 0: a winner may have already spent the payout, and
+                    # CHECK (balance >= 0) would otherwise abort the whole revert.
                     await conn.execute(
-                        "UPDATE users SET balance = balance - $1 WHERE id = $2",
+                        "UPDATE users SET balance = GREATEST(balance - $1, 0) WHERE id = $2",
                         payout, w["user_id"],
                     )
             else:
@@ -539,8 +602,9 @@ async def revert_resolved_bet(bet_id: int) -> bool:
                 odds = float(bet["yes_odds"]) if result == "yes" else float(bet["no_odds"])
                 for w in wagers:
                     payout = float(w["amount"]) * odds
+                    # Clamp at 0 (see winner branch above).
                     await conn.execute(
-                        "UPDATE users SET balance = balance - $1 WHERE id = $2",
+                        "UPDATE users SET balance = GREATEST(balance - $1, 0) WHERE id = $2",
                         payout, w["user_id"],
                     )
             await conn.execute(

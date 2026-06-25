@@ -13,16 +13,16 @@ Covers:
   - Cannot finish game while unresolved bets remain
 """
 import pytest
-import pytest_asyncio
-from decimal import Decimal
 
-STARTING_BALANCE = 1000.0
+import db
+from constants import MAX_WAGER, MIN_WAGER, STARTING_BALANCE
+
 N_PLAYERS = 30
-MIN_WAGER = 20.0
-MAX_WAGER = 200.0
 
 
-# ── helpers (raw-SQL so tests don't depend on db.py internals) ──────────────
+# ── helpers ──────────────────────────────────────────────────────────────────
+# Setup helpers (add_user / create_*) insert rows directly; behaviour helpers
+# delegate to bot/db.py so the suite exercises the real production paths.
 
 async def add_user(conn, telegram_id: int, username: str) -> dict:
     row = await conn.fetchrow(
@@ -61,76 +61,20 @@ async def create_winner_bet(conn, title, options, created_by) -> dict:
 
 
 async def place_wager(conn, user_id, bet_id, side, amount, option_id=None) -> float:
-    existing = await conn.fetchrow(
-        "SELECT * FROM wagers WHERE user_id = $1 AND bet_id = $2", user_id, bet_id
-    )
-    refund = float(existing["amount"]) if existing else 0.0
-    balance = await conn.fetchval(
-        "UPDATE users SET balance = balance + $1 - $2 WHERE id = $3 RETURNING balance",
-        refund, amount, user_id,
-    )
-    if existing:
-        await conn.execute(
-            "UPDATE wagers SET side = $1, amount = $2, option_id = $3 "
-            "WHERE user_id = $4 AND bet_id = $5",
-            side, amount, option_id, user_id, bet_id,
-        )
-    else:
-        await conn.execute(
-            "INSERT INTO wagers (user_id, bet_id, side, amount, option_id) "
-            "VALUES ($1, $2, $3, $4, $5)",
-            user_id, bet_id, side, amount, option_id,
-        )
-    return float(balance)
+    balance, _ = await db.place_wager(user_id, bet_id, side, amount, option_id)
+    return balance
 
 
 async def lock_bet(conn, bet_id):
-    await conn.execute("UPDATE bets SET status = 'locked' WHERE id = $1", bet_id)
+    await db.lock_bet(bet_id)
 
 
 async def resolve_simple_bet(conn, bet_id, result) -> list:
-    await conn.execute(
-        "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2", result, bet_id
-    )
-    wagers = await conn.fetch(
-        "SELECT w.*, b.yes_odds, b.no_odds FROM wagers w "
-        "JOIN bets b ON b.id = w.bet_id WHERE w.bet_id = $1",
-        bet_id,
-    )
-    winners = []
-    for w in wagers:
-        if w["side"] == result:
-            odds = float(w["yes_odds"]) if result == "yes" else float(w["no_odds"])
-            payout = float(w["amount"]) * odds
-            new_bal = await conn.fetchval(
-                "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
-                payout, w["user_id"],
-            )
-            winners.append({"user_id": w["user_id"], "payout": payout, "balance": float(new_bal)})
-    return winners
+    return await db.resolve_bet(bet_id, result)
 
 
 async def resolve_winner_bet(conn, bet_id, winning_option_id) -> list:
-    await conn.execute(
-        "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2",
-        str(winning_option_id), bet_id,
-    )
-    wagers = await conn.fetch(
-        "SELECT w.*, bo.odds FROM wagers w "
-        "JOIN bet_options bo ON bo.id = w.option_id "
-        "WHERE w.bet_id = $1",
-        bet_id,
-    )
-    winners = []
-    for w in wagers:
-        if w["option_id"] == winning_option_id:
-            payout = float(w["amount"]) * float(w["odds"])
-            new_bal = await conn.fetchval(
-                "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
-                payout, w["user_id"],
-            )
-            winners.append({"user_id": w["user_id"], "payout": payout, "balance": float(new_bal)})
-    return winners
+    return await db.resolve_winner_bet(bet_id, winning_option_id)
 
 
 async def get_balance(conn, user_id) -> float:
@@ -138,39 +82,17 @@ async def get_balance(conn, user_id) -> float:
 
 
 async def get_leaderboard(conn) -> list:
-    rows = await conn.fetch(
-        "SELECT id, telegram_id, username, balance FROM users ORDER BY balance DESC"
-    )
-    return [dict(r) for r in rows]
+    return await db.get_leaderboard()
 
 
 async def get_active_bets(conn) -> list:
-    rows = await conn.fetch("SELECT * FROM bets WHERE status IN ('open', 'locked') ORDER BY id")
-    return [dict(r) for r in rows]
+    return await db.get_active_bets()
 
 
 async def get_potential_winnings(conn) -> dict:
-    """Mirrors db.get_all_users_potential_winnings logic."""
-    rows = await conn.fetch(
-        "SELECT w.user_id, u.telegram_id, w.amount, w.side, b.yes_odds, b.no_odds, "
-        "b.bet_type, bo.odds AS option_odds "
-        "FROM wagers w "
-        "JOIN users u ON u.id = w.user_id "
-        "JOIN bets b ON b.id = w.bet_id "
-        "LEFT JOIN bet_options bo ON bo.id = w.option_id "
-        "WHERE b.status IN ('open', 'locked')"
-    )
-    payouts: dict[int, float] = {}
-    for r in rows:
-        tid = r["telegram_id"]
-        amount = float(r["amount"])
-        if r["bet_type"] == "winner":
-            payout = amount * float(r["option_odds"])
-        else:
-            odds = float(r["yes_odds"]) if r["side"] == "yes" else float(r["no_odds"])
-            payout = amount * odds
-        payouts[tid] = payouts.get(tid, 0.0) + payout
-    return payouts
+    """Per-user potential payout for open/locked bets, via the real data layer."""
+    stats = await db.get_all_users_wager_stats()
+    return {tid: payout for tid, (_count, payout) in stats.items()}
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -326,7 +248,6 @@ async def test_rank_calculation_for_all_30_players(conn):
     assert len(board) == N_PLAYERS
 
     # Check each player can compute their rank via next() as in _main_text
-    telegram_ids = {p["telegram_id"] for p in players}
     seen_ranks = set()
     for p in players:
         rank = next(
@@ -374,22 +295,10 @@ async def test_cashout_95_percent_30_players(conn):
     for p in players:
         await place_wager(conn, p["id"], bet_id, "yes", amount)
 
-    # Cancel all wagers (mirrors db.cancel_wager)
+    # Cancel all wagers via the real cashout path (95 % refund on open bets).
     for p in players:
-        wager = await conn.fetchrow(
-            "SELECT w.amount FROM wagers w "
-            "JOIN bets b ON b.id = w.bet_id "
-            "WHERE w.user_id = $1 AND w.bet_id = $2 AND b.status = 'open'",
-            p["id"], bet_id,
-        )
-        assert wager is not None
-        refund = round(float(wager["amount"]) * 0.95, 2)
-        await conn.execute(
-            "UPDATE users SET balance = balance + $1 WHERE id = $2", refund, p["id"]
-        )
-        await conn.execute(
-            "DELETE FROM wagers WHERE user_id = $1 AND bet_id = $2", p["id"], bet_id
-        )
+        refund = await db.cancel_wager(p["id"], bet_id)
+        assert refund == pytest.approx(round(amount * 0.95, 2))
 
     for p in players:
         bal = await get_balance(conn, p["id"])

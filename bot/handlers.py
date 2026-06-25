@@ -1,9 +1,31 @@
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.error import BadRequest
+
+import betting
+from notifications import _broadcast_new_bet, pop_notification
+from rendering import (
+    _build_bets,
+    _build_leaderboard,
+    _build_my_bets,
+    _build_realized_pnl_all,
+    _build_winners,
+)
+from telegram import Update
 from telegram.ext import ContextTypes
+from ui import (
+    _bet_type_keyboard,
+    _cancel_keyboard,
+    _delete_msg,
+    _main_keyboard,
+    _main_text,
+    _show,
+    _show_callback,
+    back_keyboard,
+    main_menu_keyboard,
+)
+
 import db
 import texts
+from constants import MAX_ODDS, MAX_WAGER, MAX_WINNER_OPTIONS, MIN_WAGER
 
 logger = logging.getLogger(__name__)
 
@@ -13,178 +35,6 @@ AWAITING_BET_TYPE = "awaiting_bet_type"
 AWAITING_BET_ODDS = "awaiting_bet_odds"
 AWAITING_WINNER_OPTIONS = "awaiting_winner_options"
 AWAITING_WAGER_LIMITS = "awaiting_wager_limits"
-
-MIN_WAGER = 20.0
-MAX_WAGER = 200.0
-MAX_WINNER_OPTIONS = 6
-
-
-async def _show(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, reply_markup=None):
-    msg_id = ctx.user_data.get("menu_message_id")
-    if msg_id:
-        try:
-            await ctx.bot.edit_message_text(
-                text=text, chat_id=chat_id, message_id=msg_id, reply_markup=reply_markup,
-            )
-            return
-        except BadRequest as e:
-            if "message is not modified" in str(e).lower():
-                return
-            logger.debug("Could not edit menu message %s: %s", msg_id, e)
-        except Exception as e:
-            logger.debug("Could not edit menu message %s: %s", msg_id, e)
-    msg = await ctx.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
-    ctx.user_data["menu_chat_id"] = chat_id
-    ctx.user_data["menu_message_id"] = msg.message_id
-
-
-async def _delete_msg(bot, chat_id: int, message_id: int):
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
-        pass
-
-
-async def _show_callback(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, text: str, reply_markup=None):
-    ctx.user_data["menu_chat_id"] = chat_id
-    ctx.user_data["menu_message_id"] = message_id
-    await _show(ctx, chat_id, text, reply_markup)
-
-
-def _option_rows(options, btn_maker):
-    rows = []
-    for i in range(0, len(options), 2):
-        rows.append([btn_maker(o) for o in options[i:i + 2]])
-    return rows
-
-
-def main_menu_keyboard(is_admin=False, game_done=False, has_winners=False):
-    top_row = []
-    if not game_done:
-        top_row.append(InlineKeyboardButton("📋 Kohteet", callback_data="nav:kohteet"))
-    top_row.append(InlineKeyboardButton("🎯 Omat vedot", callback_data="nav:omat"))
-    results_row = [InlineKeyboardButton("🏆 Tulostaulu", callback_data="nav:tulokset")]
-    if has_winners:
-        results_row.append(InlineKeyboardButton("🥇 Voittajat", callback_data="nav:voittajat"))
-    results_row.append(InlineKeyboardButton("📈 PnL", callback_data="nav:pnl"))
-    rows = [top_row, results_row]
-    if is_admin:
-        rows.append([InlineKeyboardButton("🔧 Admin-paneeli", callback_data="adm:panel")])
-    return InlineKeyboardMarkup(rows)
-
-
-async def _main_keyboard(user):
-    game_done = await db.is_game_finished()
-    has_winners = await db.has_resolved_bets()
-    return main_menu_keyboard(is_admin=user["is_admin"], game_done=game_done, has_winners=has_winners)
-
-
-def back_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")]])
-
-
-def _cancel_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Peruuta", callback_data="input:cancel")]])
-
-
-def _bet_type_keyboard():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⚖️ Kyllä / Ei", callback_data="bet_type:simple"),
-            InlineKeyboardButton("🏆 Voittajaveto", callback_data="bet_type:winner"),
-        ],
-        [InlineKeyboardButton("❌ Peruuta", callback_data="input:cancel")],
-    ])
-
-
-async def _main_text(user, name: str = None, is_new: bool = False) -> str:
-    if await db.is_game_finished():
-        leaderboard = await db.get_leaderboard()
-        total = len(leaderboard)
-        rank = next((i for i, r in enumerate(leaderboard, 1) if r["telegram_id"] == user["telegram_id"]), total)
-        return texts.GAME_FINISHED_PERSONAL.format(
-            balance=float(user["balance"]), rank=rank, total=total
-        )
-    balance = float(user["balance"])
-    if is_new and name:
-        base = texts.WELCOME_NEW.format(name=name, balance=balance)
-    else:
-        base = texts.WELCOME_BACK.format(balance=balance)
-    wagered, payout = await db.get_user_open_wager_stats(user["id"])
-    if wagered > 0:
-        base += "\n" + texts.WAGER_STATS.format(wagered=wagered, potential=balance + payout)
-    return base
-
-
-_notification_msgs: dict[int, tuple[int, int]] = {}
-
-
-async def _build_open_bets_text(new_bet_id: int = None):
-    bets = await db.get_active_bets()
-    open_bets = [b for b in bets if b["status"] == "open"]
-    if not open_bets:
-        return None
-    lines = ["🎰 Avatut vetokohteet\n"]
-    for b in open_bets:
-        marker = " 🆕" if b["id"] == new_bet_id else ""
-        if b["bet_type"] == "winner":
-            options = await db.get_bet_options(b["id"])
-            opts = ", ".join(f"{o['label']} @ {float(o['odds']):.2f}" for o in options)
-            lines.append(f"#{b['id']} {b['title']}{marker} — {opts}")
-        else:
-            lines.append(f"#{b['id']} {b['title']}{marker} — Kyllä @ {float(b['yes_odds']):.2f} | Ei @ {float(b['no_odds']):.2f}")
-    return "\n".join(lines)
-
-
-async def _broadcast_new_bet(bot, bet: dict, options: list = None):
-    telegram_ids = await db.get_all_telegram_ids()
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 Katso kohteita", callback_data="nav:kohteet")]])
-    if options:
-        opts_text = "".join(f"🏅 {o['label']} @ {float(o['odds']):.2f}\n" for o in options)
-        text = texts.NEW_BET_NOTIFICATION_WINNER.format(
-            id=bet["id"], title=bet["title"], options=opts_text
-        )
-    else:
-        text = texts.NEW_BET_NOTIFICATION_SIMPLE.format(
-            id=bet["id"], title=bet["title"],
-            yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
-        )
-    consolidated = await _build_open_bets_text(new_bet_id=bet["id"])
-    for tid in telegram_ids:
-        msg_text = consolidated if consolidated else text
-        msg_kb = keyboard
-        prev = _notification_msgs.get(tid)
-        sent = False
-        if prev:
-            chat_id, msg_id = prev
-            try:
-                await bot.edit_message_text(text=msg_text, chat_id=chat_id, message_id=msg_id, reply_markup=msg_kb)
-                sent = True
-            except Exception:
-                try:
-                    await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception:
-                    pass
-        if not sent:
-            try:
-                msg = await bot.send_message(chat_id=tid, text=msg_text, reply_markup=msg_kb)
-                _notification_msgs[tid] = (tid, msg.message_id)
-            except Exception:
-                logger.debug("Could not send new-bet notification to %s", tid)
-                _notification_msgs.pop(tid, None)
-
-
-async def _broadcast_bet_resolved(bot, bet: dict, result_fi: str, winners_text: str):
-    telegram_ids = await db.get_all_telegram_ids()
-    msg = texts.H(texts.BET_RESOLVED_MSG.format(
-        id=bet["id"], title=bet["title"], result=result_fi, winners=winners_text
-    ))
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎯 Omat vedot", callback_data="nav:omat")]])
-    for tid in telegram_ids:
-        try:
-            await bot.send_message(chat_id=tid, text=msg, reply_markup=keyboard)
-        except Exception:
-            logger.debug("Could not send resolution notification to %s", tid)
 
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -201,7 +51,6 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
-    is_admin = user["is_admin"] if user else False
     keyboard = await _main_keyboard(user) if user else main_menu_keyboard()
     await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
     await _show(ctx, update.effective_chat.id, texts.H(texts.HELP_TEXT), keyboard)
@@ -302,7 +151,7 @@ async def cmd_new_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         yes_odds = float(odds_part[0].replace(",", "."))
         no_odds = float(odds_part[1].replace(",", "."))
-        if yes_odds <= 1.0 or no_odds <= 1.0:
+        if not (1.0 < yes_odds <= MAX_ODDS) or not (1.0 < no_odds <= MAX_ODDS):
             raise ValueError
     except ValueError:
         await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_ODDS), await _main_keyboard(user))
@@ -371,7 +220,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _show_callback(ctx, chat_id, query.message.message_id,
                              texts.H(texts.BALANCE.format(balance=float(user["balance"]))), back_keyboard())
     elif action == "kohteet":
-        prev = _notification_msgs.pop(user["telegram_id"], None)
+        prev = pop_notification(user["telegram_id"])
         if prev:
             try:
                 await ctx.bot.delete_message(chat_id=prev[0], message_id=prev[1])
@@ -638,12 +487,8 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     bet_max = pending.get("max_wager", MAX_WAGER)
     amount_hint = f"vain {int(bet_min)} € vedot sallittu" if bet_min == bet_max else f"{int(bet_min)}–{int(bet_max)} €"
 
-    try:
-        amount = float(update.message.text.strip().replace(",", "."))
-        if amount != int(amount) or amount <= 0:
-            raise ValueError
-        amount = float(int(amount))
-    except ValueError:
+    amount = betting.parse_wager_amount(update.message.text)
+    if amount is None:
         user = await db.get_user(update.effective_user.id)
         await _show(ctx, update.effective_chat.id, texts.H(
             f"❌ Syötä kokonaisluku euroissa ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"
@@ -681,18 +526,19 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     bet_max = float(bet["max_wager"])
     min_wager = max(MIN_WAGER, bet_min)
 
-    if amount < min_wager:
+    existing = await db.get_user_wager(user["id"], bet_id)
+    existing_amount = float(existing["amount"]) if existing else 0.0
+
+    status, new_total = betting.validate_wager(
+        amount, float(user["balance"]), existing_amount, bet_min, bet_max, MIN_WAGER,
+    )
+    if status in (betting.WAGER_BELOW_GLOBAL_MIN, betting.WAGER_BELOW_BET_MIN):
         await _show(ctx, update.effective_chat.id, texts.H(
             f"❌ Vetosumman täytyy olla {int(min_wager):.0f}–{int(bet_max):.0f} €.\n\n"
             f"Syötä vetosumma uudelleen ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"
         ), _cancel_keyboard())
         return
-
-    existing = await db.get_user_wager(user["id"], bet_id)
-    existing_amount = float(existing["amount"]) if existing else 0.0
-    new_total = existing_amount + amount
-
-    if new_total > bet_max:
+    if status == betting.WAGER_ABOVE_MAX:
         remaining = int(bet_max - existing_amount)
         await _show(ctx, update.effective_chat.id, texts.H(
             f"❌ Panosten maksimi on {int(bet_max)} € per kohde. "
@@ -700,8 +546,7 @@ async def _handle_amount(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Syötä vetosumma uudelleen ({amount_hint}):\n\nSaldosi: {float(user['balance']):.0f} €"
         ), _cancel_keyboard())
         return
-
-    if amount > float(user["balance"]):
+    if status == betting.WAGER_INSUFFICIENT:
         await _show(ctx, update.effective_chat.id, texts.H(
             f"{texts.NOT_ENOUGH_BALANCE.format(balance=float(user['balance']))}\n\n"
             f"Syötä vetosumma uudelleen ({amount_hint}):"
@@ -774,7 +619,7 @@ async def _handle_bet_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             raise ValueError
         yes_odds = float(parts[0])
         no_odds = float(parts[1])
-        if yes_odds <= 1.0 or no_odds <= 1.0:
+        if not (1.0 < yes_odds <= MAX_ODDS) or not (1.0 < no_odds <= MAX_ODDS):
             raise ValueError
     except ValueError:
         await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_ODDS), _cancel_keyboard())
@@ -800,7 +645,7 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     pending = ctx.user_data.get(AWAITING_WINNER_OPTIONS, {})
     title = pending.get("title", "")
 
-    lines = [l.strip() for l in update.message.text.strip().split("|") if l.strip()]
+    lines = [ln.strip() for ln in update.message.text.strip().split("|") if ln.strip()]
     options = []
     for line in lines:
         if "@" not in line:
@@ -810,7 +655,7 @@ async def _handle_winner_options(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         label = parts[0].strip()
         try:
             odds = float(parts[1].strip().replace(",", "."))
-            if odds <= 1.0 or not label:
+            if not (1.0 < odds <= MAX_ODDS) or not label:
                 raise ValueError
         except ValueError:
             await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_WINNER_OPTIONS), _cancel_keyboard())
@@ -891,30 +736,28 @@ async def _process_wager(ctx, chat_id, user, bet_id: int, side: str, amount: flo
         await _show(ctx, chat_id, texts.H("❌ Tämä on voittajaveto — käytä painikkeita panostamiseen."), await _main_keyboard(user))
         return False
 
-    if amount < MIN_WAGER:
-        await _show(ctx, chat_id, texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)), _cancel_keyboard())
-        return True
-
     bet_min = float(bet["min_wager"])
     bet_max = float(bet["max_wager"])
-
-    if amount < bet_min:
-        await _show(ctx, chat_id, texts.H(texts.MAX_WAGER_EXCEEDED.format(min=bet_min, max=bet_max)), _cancel_keyboard())
-        return True
-
     existing = await db.get_user_wager(user["id"], bet_id)
     existing_amount = float(existing["amount"]) if existing else 0.0
-    new_total = existing_amount + amount
 
-    if new_total > bet_max:
+    status, new_total = betting.validate_wager(
+        amount, float(user["balance"]), existing_amount, bet_min, bet_max, MIN_WAGER,
+    )
+    if status == betting.WAGER_BELOW_GLOBAL_MIN:
+        await _show(ctx, chat_id, texts.H(texts.MAX_WAGER_EXCEEDED.format(min=MIN_WAGER, max=MAX_WAGER)), _cancel_keyboard())
+        return True
+    if status == betting.WAGER_BELOW_BET_MIN:
+        await _show(ctx, chat_id, texts.H(texts.MAX_WAGER_EXCEEDED.format(min=bet_min, max=bet_max)), _cancel_keyboard())
+        return True
+    if status == betting.WAGER_ABOVE_MAX:
         remaining = int(bet_max - existing_amount)
         await _show(ctx, chat_id, texts.H(
             f"❌ Panosten maksimi on {int(bet_max)} € per kohde. "
             f"Sinulla on jo {int(existing_amount)} € panostettuna — voit lisätä enintään {remaining} €."
         ), _cancel_keyboard())
         return True
-
-    if amount > float(user["balance"]):
+    if status == betting.WAGER_INSUFFICIENT:
         await _show(ctx, chat_id, texts.H(texts.NOT_ENOUGH_BALANCE.format(balance=float(user["balance"]))), _cancel_keyboard())
         return True
 
@@ -946,262 +789,3 @@ async def _process_wager(ctx, chat_id, user, bet_id: int, side: str, amount: flo
     return False
 
 
-async def _build_bets(user):
-    game_done = await db.is_game_finished()
-    bets = await db.get_active_bets()
-    my_wagers = {w["bet_id"]: w for w in await db.get_user_wagers_with_bets(user["id"])}
-
-    bottom_row = []
-    if not game_done and user["is_admin"]:
-        bottom_row.append(InlineKeyboardButton("➕ Uusi kohde", callback_data="nav:new_bet"))
-    bottom_row.append(InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main"))
-
-    if not bets:
-        return texts.NO_BETS, InlineKeyboardMarkup([bottom_row])
-
-    msg = texts.BET_LIST_HEADER
-    keyboard = []
-
-    for b in bets:
-        if b["status"] == "locked":
-            continue
-        w = my_wagers.get(b["id"])
-        is_open = b["status"] == "open"
-
-        if b["bet_type"] == "winner":
-            options = await db.get_bet_options(b["id"])
-            prefix = "" if is_open else "🔒 "
-            title_text = f"{prefix}🏆 #{b['id']} {b['title']}"
-            keyboard.append([InlineKeyboardButton(title_text, callback_data=f"noop:{b['id']}")])
-            if not game_done:
-                my_option_id = w.get("option_id") if w else None
-
-                def _make_btn(o, _my_id=my_option_id, _bid=b["id"]):
-                    return InlineKeyboardButton(
-                        f"{'🎯 ' if o['id'] == _my_id else ''}{o['label']} @ {float(o['odds']):.2f}",
-                        callback_data=f"opt:{_bid}:{o['id']}",
-                    )
-
-                for row in _option_rows(options, _make_btn):
-                    keyboard.append(row)
-        else:
-            if not game_done:
-                lock_prefix = "" if is_open else "🔒 "
-                my_side = w["side"] if w else None
-                keyboard.append([InlineKeyboardButton(f"{lock_prefix}⚖️ #{b['id']} {b['title']}", callback_data=f"noop:{b['id']}")])
-                keyboard.append([
-                    InlineKeyboardButton(f"{'🎯 ' if my_side == 'yes' else ''}Kyllä @ {float(b['yes_odds']):.2f}", callback_data=f"bet:{b['id']}:yes"),
-                    InlineKeyboardButton(f"{'🎯 ' if my_side == 'no' else ''}Ei @ {float(b['no_odds']):.2f}", callback_data=f"bet:{b['id']}:no"),
-                ])
-
-    keyboard.append(bottom_row)
-    if not keyboard[:-1]:
-        msg += texts.ALL_BETS_LOCKED
-    return msg, InlineKeyboardMarkup(keyboard)
-
-
-async def _build_my_bets(user):
-    wagers = await db.get_user_wagers_with_bets(user["id"])
-    if not wagers:
-        return texts.NO_WAGERS, back_keyboard()
-
-    msg = texts.MY_WAGERS_HEADER
-    keyboard = []
-    for w in wagers:
-        if w["bet_type"] == "winner":
-            side_fi = w["option_label"] or "?"
-            odds = float(w["option_odds"]) if w["option_odds"] else 0.0
-            won = w["status"] == "resolved" and str(w.get("result")) == str(w.get("option_id"))
-        else:
-            side_fi = "Kyllä" if w["side"] == "yes" else "Ei"
-            odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
-            won = w["status"] == "resolved" and (
-                (w["side"] == "yes" and w.get("result") == "yes") or
-                (w["side"] == "no" and w.get("result") == "no")
-            )
-
-        amount = float(w["amount"])
-        payout = amount * odds
-        if w["status"] == "open":
-            icon, extra, title_suffix = "🎯", f" (mahdollinen voitto {payout:.0f} €)", ""
-        elif w["status"] == "locked":
-            icon, extra, title_suffix = "🎯", f" (mahdollinen voitto {payout:.0f} €)", " 🔒"
-        elif won:
-            profit = amount * odds
-            icon, extra, title_suffix = "🏆", f" (+{profit:.0f} €)", ""
-        else:
-            icon, extra, title_suffix = "❌", f" (-{amount:.0f} €)", ""
-
-        msg += texts.WAGER_ROW.format(
-            bet_id=w["bet_id"], title=w["title"], title_suffix=title_suffix, side=side_fi,
-            amount=amount, odds=odds, icon=icon, extra=extra,
-        )
-        if w["status"] == "open":
-            refund = amount * 0.95
-            label = f"💸 Cashout #{w['bet_id']} (+{refund:.0f} €)"
-            keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
-    keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])
-    return msg, InlineKeyboardMarkup(keyboard)
-
-
-async def _build_winners() -> list[str]:
-    rows = await db.get_resolved_bets_with_winners()
-    if not rows:
-        return [texts.WINNERS_NO_RESOLVED]
-
-    bets_seen: list[int] = []
-    by_bet: dict[int, list] = {}
-    for r in rows:
-        bid = r["bet_id"]
-        if bid not in by_bet:
-            bets_seen.append(bid)
-            by_bet[bid] = []
-        by_bet[bid].append(r)
-
-    blocks: list[str] = []
-    for bid in bets_seen:
-        wagers = by_bet[bid]
-        first = wagers[0]
-        if first["bet_type"] == "winner":
-            winning_row = next((w for w in wagers if str(w["option_id"]) == str(first["result"])), None)
-            result_label = winning_row["option_label"] if winning_row else f"#{first['result']}"
-        else:
-            result_label = "Kyllä" if first["result"] == "yes" else "Ei"
-        block = texts.WINNERS_BET_SECTION.format(id=bid, title=first["title"], result=result_label)
-
-        winners = []
-        losers = []
-        for w in wagers:
-            name = w["username"] or f"user{bid}"
-            amount = float(w["amount"])
-            if first["bet_type"] == "winner":
-                if str(w["option_id"]) == str(first["result"]):
-                    winners.append((name, amount * float(w["option_odds"])))
-                else:
-                    losers.append((name, amount))
-            else:
-                if w["side"] == first["result"]:
-                    odds = float(w["yes_odds"]) if w["side"] == "yes" else float(w["no_odds"])
-                    winners.append((name, amount * odds))
-                else:
-                    losers.append((name, amount))
-
-        if winners:
-            winners.sort(key=lambda x: x[0].lower())
-            parts = [f"{name} (+{profit:,.0f} \u20ac)".replace(",", "\u202f") for name, profit in winners]
-            block += "\U0001f3c6 " + ", ".join(parts) + "\n"
-        elif not losers:
-            block += texts.WINNERS_NO_PLAYERS
-
-        if losers:
-            losers.sort(key=lambda x: x[0].lower())
-            parts = [f"{name} (-{amount:,.0f} \u20ac)".replace(",", "\u202f") for name, amount in losers]
-            block += "\U0001f6ab " + ", ".join(parts) + "\n"
-
-        blocks.append(block)
-
-    limit = 3200
-    chunks: list[str] = []
-    current = texts.WINNERS_HEADER
-    for block in blocks:
-        if current != texts.WINNERS_HEADER and len(current) + len(block) + 1 > limit:
-            chunks.append(current.rstrip())
-            current = texts.WINNERS_HEADER
-        current += block + "\n"
-    if current.strip() != texts.WINNERS_HEADER.strip():
-        chunks.append(current.rstrip())
-
-    return chunks if chunks else [texts.WINNERS_NO_RESOLVED]
-
-
-async def _build_realized_pnl_all() -> list[str]:
-    PNL_HEADER = "📈 Realisoitunut PnL\n\n"
-    rows = await db.get_resolved_bets_with_winners()
-    if not rows:
-        return [PNL_HEADER + "Ei vielä ratkaistuja vetoja."]
-
-    by_player: dict[str, list[float]] = {}
-    for r in rows:
-        name = r["username"] or "?"
-        amount = float(r["amount"])
-        if r["bet_type"] == "winner":
-            won = str(r["option_id"]) == str(r["result"])
-            odds = float(r["option_odds"]) if r["option_odds"] else 0.0
-        else:
-            won = (r["side"] == "yes" and r["result"] == "yes") or \
-                  (r["side"] == "no" and r["result"] == "no")
-            odds = float(r["yes_odds"]) if r["side"] == "yes" else float(r["no_odds"])
-
-        pnl = amount * odds - amount if won else -amount
-        by_player.setdefault(name, []).append(pnl)
-
-    sorted_players = sorted(by_player.items(), key=lambda x: sum(x[1]), reverse=True)
-
-    lines: list[str] = []
-    for name, pnls in sorted_players:
-        total = sum(pnls)
-        parts = " ".join(
-            f"+{p:.0f} €" if p >= 0 else f"{p:.0f} €"
-            for p in pnls
-        )
-        sign = "+" if total >= 0 else ""
-        lines.append(f"{name}: {parts} = {sign}{total:.0f} €")
-
-    limit = 3200
-    chunks: list[str] = []
-    current = PNL_HEADER
-    for line in lines:
-        entry = line + "\n"
-        if current != PNL_HEADER and len(current) + len(entry) > limit:
-            chunks.append(current.rstrip())
-            current = PNL_HEADER
-        current += entry
-    if current.strip() != PNL_HEADER.strip():
-        chunks.append(current.rstrip())
-
-    return chunks if chunks else [PNL_HEADER + "Ei vielä ratkaistuja vetoja."]
-
-
-async def _build_leaderboard():
-    rows = await db.get_leaderboard()
-    if not rows:
-        return "Ei pelaajia vielä."
-
-    game_done = await db.is_game_finished()
-    wager_stats = {} if game_done else await db.get_all_users_wager_stats()
-    header = texts.GAME_FINISHED_HEADER if game_done else texts.LEADERBOARD_HEADER
-    msg = header
-    for i, row in enumerate(rows, 1):
-        name = row["username"] or f"user{row['telegram_id']}"
-        balance = float(row["balance"])
-        if game_done:
-            msg += texts.GAME_FINISHED_ROW.format(rank=i, username=name, balance=balance)
-        else:
-            count, payout = wager_stats.get(row["telegram_id"], (0, 0.0))
-            if count == 0:
-                msg += texts.LEADERBOARD_ROW_NO_WAGERS.format(rank=i, username=name, balance=balance)
-            elif count == 1:
-                msg += texts.LEADERBOARD_ROW_ONE_WAGER.format(rank=i, username=name, balance=balance, potential=balance + payout)
-            else:
-                msg += texts.LEADERBOARD_ROW_MANY_WAGERS.format(rank=i, username=name, balance=balance, count=count, potential=balance + payout)
-    if game_done:
-        msg += texts.GAME_FINISHED_NOTICE
-
-    kepulit = await db.get_kepulit()
-    if kepulit:
-        msg += texts.KEPULIT_HEADER
-        for i, row in enumerate(kepulit, 1):
-            name = row["username"] or f"user{row['telegram_id']}"
-            balance = float(row["balance"])
-            bonus = float(row["bonus_balance"])
-            if game_done:
-                msg += texts.KEPULIT_ROW.format(rank=i, username=name, balance=balance, bonus=bonus)
-            else:
-                count, payout = wager_stats.get(row["telegram_id"], (0, 0.0))
-                if count == 0:
-                    msg += texts.KEPULIT_ROW_NO_WAGERS.format(rank=i, username=name, balance=balance, bonus=bonus)
-                elif count == 1:
-                    msg += texts.KEPULIT_ROW_ONE_WAGER.format(rank=i, username=name, balance=balance, bonus=bonus, potential=balance + payout)
-                else:
-                    msg += texts.KEPULIT_ROW_MANY_WAGERS.format(rank=i, username=name, balance=balance, bonus=bonus, count=count, potential=balance + payout)
-    return msg

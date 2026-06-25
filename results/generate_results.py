@@ -27,6 +27,10 @@ from dotenv import load_dotenv
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent
 
+# Reuse the bot's pure betting math (win/odds/payout rules).
+sys.path.insert(0, str(REPO_ROOT / "bot"))
+import betting  # noqa: E402
+
 # Load .env from repo root; allow env override
 load_dotenv(REPO_ROOT / ".env")
 
@@ -54,7 +58,6 @@ async def main():
             "SELECT id, telegram_id, username, balance, bonus_balance, created_at "
             "FROM users WHERE bonus_balance = 0 ORDER BY balance DESC"
         )
-        user_id_map = {u["id"]: dict(u) for u in users}
 
         # ── Bets with options ──────────────────────────────────────────────────
         bets_raw = await conn.fetch(
@@ -110,13 +113,10 @@ async def main():
         wager_details = []
         for w in bet_wagers:
             if b["status"] == "resolved":
-                if b["bet_type"] == "winner":
-                    won = str(w["option_id"]) == str(b["result"])
-                    odds = w["option_odds"] or 0.0
-                else:
-                    won = (w["side"] == "yes" and b["result"] == "yes") or \
-                          (w["side"] == "no" and b["result"] == "no")
-                    odds = w["yes_odds"] if w["side"] == "yes" else w["no_odds"]
+                won = betting.is_winning(b["bet_type"], w["side"], w["option_id"], b["result"])
+                odds = betting.odds_for(
+                    b["bet_type"], w["side"], w["yes_odds"], w["no_odds"], w["option_odds"],
+                )
                 payout = float(w["amount"]) * odds if won else 0.0
                 pnl = payout - float(w["amount"])
             else:
@@ -151,6 +151,12 @@ async def main():
 
     bet_by_id = {b["id"]: b for b in bets_data}
 
+    # Group wagers by user once, instead of rescanning all wagers per player
+    # (which was O(players × wagers)).
+    wagers_by_user: dict[int, list] = {}
+    for w in wagers_raw:
+        wagers_by_user.setdefault(w["user_id"], []).append(dict(w))
+
     # ── Leaderboard ────────────────────────────────────────────────────────────
     leaderboard = []
     for rank, u in enumerate(users, 1):
@@ -158,7 +164,7 @@ async def main():
         uid = u["id"]
         username = u["username"] or f"user{u['telegram_id']}"
 
-        player_wagers_raw = wagers_by_bet_for_user(wagers_raw, uid)
+        player_wagers_raw = wagers_by_user.get(uid, [])
         total_wagered = sum(float(w["amount"]) for w in player_wagers_raw)
 
         bets_won = bets_lost = bets_open = 0
@@ -196,11 +202,14 @@ async def main():
     biggest_pot_bet = max(bets_data, key=lambda b: b["total_wagered"], default=None)
     total_wagers_count = sum(b["num_bettors"] for b in bets_data)
 
+    # Map each wager-detail object to its bet title once (by identity), instead
+    # of scanning every bet's wager list per lookup.
+    title_by_wager_id = {
+        id(w): b["title"] for b in bets_data for w in b["wagers"]
+    }
+
     def find_bet_title(wager_detail):
-        for b in bets_data:
-            if wager_detail in b["wagers"]:
-                return b["title"]
-        return ""
+        return title_by_wager_id.get(id(wager_detail), "")
 
     stats = {
         "total_bets": len(bets_data),
@@ -246,10 +255,6 @@ async def main():
     print(f"✅ Tulokset tallennettu: {OUTPUT}")
     print(f"   {len(leaderboard)} pelaajaa · {len(bets_data)} vetoa · {total_wagers_count} panosta")
     print(f"   Potti yhteensä: {stats['total_pot']:.0f} €")
-
-
-def wagers_by_bet_for_user(wagers_raw, user_id: int) -> list:
-    return [dict(w) for w in wagers_raw if w["user_id"] == user_id]
 
 
 class _Encoder(json.JSONEncoder):

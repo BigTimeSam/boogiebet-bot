@@ -51,11 +51,18 @@ jobs:
       - name: Archive .env backup
         run: |
           set -euo pipefail
+          # The .env holds live secrets (bot token, admin password). Keep only a
+          # single most-recent backup with owner-only permissions to minimize the
+          # number of plaintext copies of those secrets on disk.
           BACKUP_DIR="$DEPLOY_PATH/backups/env"
           mkdir -p "$BACKUP_DIR"
+          chmod 700 "$BACKUP_DIR"
           if [[ -f "$DEPLOY_PATH/.env" ]]; then
-            cp "$DEPLOY_PATH/.env" "$BACKUP_DIR/.env.$(date -u +%Y-%m-%d_%H%M%S)"
-            ls -t "$BACKUP_DIR"/.env.* 2>/dev/null | tail -n +11 | xargs -r rm --
+            BACKUP_FILE="$BACKUP_DIR/.env.$(date -u +%Y-%m-%d_%H%M%S)"
+            cp "$DEPLOY_PATH/.env" "$BACKUP_FILE"
+            chmod 600 "$BACKUP_FILE"
+            # Retain only the newest backup; delete all older copies.
+            ls -t "$BACKUP_DIR"/.env.* 2>/dev/null | tail -n +2 | xargs -r rm --
           fi
 
       - name: Normalize deploy worktree

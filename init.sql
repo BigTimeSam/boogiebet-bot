@@ -2,9 +2,10 @@ CREATE TABLE IF NOT EXISTS users (
     id          SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
     username    VARCHAR(255),
-    balance     NUMERIC(10,2) DEFAULT 1000.00 CHECK (balance >= 0),
-    is_admin    BOOLEAN DEFAULT FALSE,
-    created_at  TIMESTAMP DEFAULT NOW()
+    balance       NUMERIC(10,2) DEFAULT 1000.00 CHECK (balance >= 0),
+    bonus_balance NUMERIC(10,2) NOT NULL DEFAULT 0,
+    is_admin      BOOLEAN DEFAULT FALSE,
+    created_at    TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS bets (
@@ -17,6 +18,8 @@ CREATE TABLE IF NOT EXISTS bets (
     result      TEXT,                                  -- yes | no | option_id (winner)
     min_wager   NUMERIC(6,2) NOT NULL DEFAULT 20,
     max_wager   NUMERIC(6,2) NOT NULL DEFAULT 200,
+    weight      INTEGER NOT NULL DEFAULT 0,            -- display ordering
+    opened_once BOOLEAN NOT NULL DEFAULT FALSE,        -- has this bet ever been opened
     created_by  INTEGER REFERENCES users(id),
     created_at  TIMESTAMP DEFAULT NOW()
 );

@@ -1,0 +1,53 @@
+name: CI
+
+# Runs on pull requests (deploy.yml already runs the suite on push to master).
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint, type-check & test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: boogiebet
+          POSTGRES_USER: boogiebet
+          POSTGRES_PASSWORD: boogiebet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U boogiebet"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://boogiebet:boogiebet@localhost:5432/boogiebet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff (lint)
+        run: ruff check .
+        # `ruff format` is configured but not yet enforced — the existing code
+        # predates it. Run `ruff format .` as a one-off, review, then add
+        # `ruff format --check .` here to keep it formatted.
+
+      - name: Mypy (advisory; gradual typing)
+        run: mypy
+        continue-on-error: true
+
+      - name: Pytest
+        run: python -m pytest tests/ -v --cov=bot --cov-report=term-missing

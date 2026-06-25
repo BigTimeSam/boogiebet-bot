@@ -1,10 +1,18 @@
+import logging
 import os
 from html import escape
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+
+from notifications import _broadcast_bet_resolved, _broadcast_new_bet
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
+from ui import _cancel_keyboard, _show_callback
+
 import db
 import texts
-from handlers import AWAITING_WAGER_LIMITS, _cancel_keyboard, _show_callback, _broadcast_new_bet, _broadcast_bet_resolved
+from constants import MAX_ODDS
+from handlers import AWAITING_WAGER_LIMITS
+
+logger = logging.getLogger(__name__)
 
 
 def _password():
@@ -115,7 +123,13 @@ async def cmd_resolve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if bet["status"] == "resolved":
         await update.message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
         return
+    if bet["status"] != "locked":
+        await update.message.reply_text(texts.H(texts.BET_NOT_LOCKED.format(id=bet_id)))
+        return
     winners = await db.resolve_bet(bet_id, result)
+    if winners is None:
+        await update.message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
+        return
     result_fi = "Kyllä ✅" if result == "yes" else "Ei ❌"
     winners_text = "".join(
         texts.WINNER_ROW.format(username=w["username"], profit=w["profit"])
@@ -327,6 +341,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             result_fi = f"🏆 {winning['label']}" if winning else f"Option {winning_option_id}"
         else:
             winners = await db.resolve_bet(bet_id, value)
+            if winners is None:
+                await query.answer(texts.BET_RESOLVED.format(id=bet_id), show_alert=True)
+                return
             result_fi = "Kyllä ✅" if value == "yes" else "Ei ❌"
         winners_text = "".join(
             texts.WINNER_ROW.format(username=w["username"], profit=w["profit"])
@@ -611,7 +628,7 @@ async def cmd_update_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if at_pos == -1:
                     raise ValueError
                 new_odds = float(raw[at_pos + 1:].strip().replace(",", "."))
-                if new_odds <= 1.0:
+                if not (1.0 < new_odds <= MAX_ODDS):
                     raise ValueError
                 option_odds.append((existing_options[i]["position"], new_odds))
                 new_odds_list.append((existing_options[i]["label"], new_odds))
@@ -634,7 +651,7 @@ async def cmd_update_odds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             yes_odds = float(parts[0].replace(",", "."))
             no_odds = float(parts[1].replace(",", "."))
-            if yes_odds <= 1.0 or no_odds <= 1.0:
+            if not (1.0 < yes_odds <= MAX_ODDS) or not (1.0 < no_odds <= MAX_ODDS):
                 raise ValueError
         except ValueError:
             await update.message.reply_text(texts.H(texts.INVALID_ODDS))
@@ -749,8 +766,9 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await bot.send_message(chat_id=tid, text=broadcast_text, parse_mode="HTML")
             sent += 1
-        except Exception:
+        except Exception as e:
             failed += 1
+            logger.warning("Broadcast to %s failed: %s", tid, e)
 
     await update.message.reply_text(
         texts.H(f"✅ Tiedote lähetetty!\nLähetettiin: {sent} | Epäonnistui: {failed}")

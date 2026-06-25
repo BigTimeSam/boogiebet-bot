@@ -1,15 +1,18 @@
 """
 Integration tests for bet resolution, wager limits and leaderboard.
-All tests run against a real PostgreSQL instance (see conftest.py).
+All tests run against a real PostgreSQL instance (see conftest.py) and exercise
+the production data layer (bot/db.py) rather than re-implementations.
 """
 import pytest
-import pytest_asyncio
-from decimal import Decimal
 
-MAX_WAGER = 200.0
-STARTING_BALANCE = Decimal("1000.00")
+import db
+from constants import MAX_WAGER
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+# Setup helpers (add_user / create_*) insert rows directly. Behaviour helpers
+# (place_wager / lock / resolve / leaderboard) delegate to bot/db.py so the tests
+# cover the real money paths, including the atomic balance guard and the
+# status-guarded, idempotent resolution logic.
 
 async def add_user(conn, telegram_id: int, username: str) -> dict:
     row = await conn.fetchrow(
@@ -49,80 +52,21 @@ async def create_winner_bet(conn, title: str, options: list, created_by: int) ->
 
 async def place_wager(conn, user_id: int, bet_id: int, side: str,
                       amount: float, option_id: int = None) -> float:
-    """Place or replace a wager; returns new balance."""
-    existing = await conn.fetchrow(
-        "SELECT * FROM wagers WHERE user_id = $1 AND bet_id = $2", user_id, bet_id
-    )
-    refund = float(existing["amount"]) if existing else 0.0
-    balance = await conn.fetchval(
-        "UPDATE users SET balance = balance + $1 - $2 WHERE id = $3 RETURNING balance",
-        refund, amount, user_id,
-    )
-    if existing:
-        await conn.execute(
-            "UPDATE wagers SET side = $1, amount = $2, option_id = $3 "
-            "WHERE user_id = $4 AND bet_id = $5",
-            side, amount, option_id, user_id, bet_id,
-        )
-    else:
-        await conn.execute(
-            "INSERT INTO wagers (user_id, bet_id, side, amount, option_id) "
-            "VALUES ($1, $2, $3, $4, $5)",
-            user_id, bet_id, side, amount, option_id,
-        )
-    return float(balance)
+    """Place or replace a wager via the real data layer; returns new balance."""
+    balance, _ = await db.place_wager(user_id, bet_id, side, amount, option_id)
+    return balance
 
 
 async def lock_bet(conn, bet_id: int):
-    await conn.execute(
-        "UPDATE bets SET status = 'locked' WHERE id = $1", bet_id
-    )
+    await db.lock_bet(bet_id)
 
 
 async def resolve_simple_bet(conn, bet_id: int, result: str) -> list:
-    await conn.execute(
-        "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2",
-        result, bet_id,
-    )
-    wagers = await conn.fetch(
-        "SELECT w.*, b.yes_odds, b.no_odds FROM wagers w "
-        "JOIN bets b ON b.id = w.bet_id WHERE w.bet_id = $1",
-        bet_id,
-    )
-    winners = []
-    for w in wagers:
-        if w["side"] == result:
-            odds = float(w["yes_odds"]) if result == "yes" else float(w["no_odds"])
-            payout = float(w["amount"]) * odds
-            new_balance = await conn.fetchval(
-                "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
-                payout, w["user_id"],
-            )
-            winners.append({"user_id": w["user_id"], "payout": payout, "balance": float(new_balance)})
-    return winners
+    return await db.resolve_bet(bet_id, result)
 
 
 async def resolve_winner_bet(conn, bet_id: int, winning_option_id: int) -> list:
-    await conn.execute(
-        "UPDATE bets SET status = 'resolved', result = $1 WHERE id = $2",
-        str(winning_option_id), bet_id,
-    )
-    wagers = await conn.fetch(
-        "SELECT w.*, bo.odds FROM wagers w "
-        "JOIN bet_options bo ON bo.id = w.option_id "
-        "WHERE w.bet_id = $1",
-        bet_id,
-    )
-    winners = []
-    for w in wagers:
-        if w["option_id"] == winning_option_id:
-            payout = float(w["amount"]) * float(w["odds"])
-            new_balance = await conn.fetchval(
-                "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
-                payout, w["user_id"],
-            )
-            winners.append({"user_id": w["user_id"], "payout": payout, "balance": float(new_balance)})
-    return winners
+    return await db.resolve_winner_bet(bet_id, winning_option_id)
 
 
 async def get_balance(conn, user_id: int) -> float:
@@ -130,10 +74,7 @@ async def get_balance(conn, user_id: int) -> float:
 
 
 async def get_leaderboard(conn) -> list:
-    rows = await conn.fetch(
-        "SELECT id, username, balance FROM users ORDER BY balance DESC"
-    )
-    return [dict(r) for r in rows]
+    return await db.get_leaderboard()
 
 
 # ── tests: simple yes/no bets ─────────────────────────────────────────────────
@@ -243,7 +184,7 @@ async def test_winner_bet_correct_option_paid(conn):
     winners = await resolve_winner_bet(conn, bet_id, opt_b)  # Tiimi B wins
 
     assert len(winners) == 1
-    assert winners[0]["user_id"] == bob["id"]
+    assert winners[0]["username"] == "bob"
 
     # bob: 1000 - 150 + (150 × 3.50) = 1375
     assert await get_balance(conn, bob["id"])   == pytest.approx(1375.0)
@@ -381,19 +322,18 @@ async def test_wager_update_respects_balance(conn):
 async def test_cannot_wager_more_than_balance(conn):
     """
     A user with 1000 € cannot place a wager of 1001 €.
-    The check happens at the handler level; here we verify the DB itself
-    would allow it (no DB constraint) so the handler check is load-bearing.
+    db.place_wager's atomic SQL guard rejects the overdraw, returns None, and
+    makes no change — this is the load-bearing overdraw protection.
     """
     alice = await add_user(conn, 1, "alice")
     admin = await add_user(conn, 99, "admin")
     bet = await create_simple_bet(conn, "Balance test", 2.0, 2.0, created_by=admin["id"])
 
-    # Simulate handler-level check: amount > balance → reject
-    amount = 1001.0
-    balance = float(await conn.fetchval("SELECT balance FROM users WHERE id = $1", alice["id"]))
-    assert amount > balance, "Pre-condition: amount exceeds balance"
+    balance, existed = await db.place_wager(alice["id"], bet["id"], "yes", 1001.0)
+    assert balance is None
+    assert existed is False
 
-    # No wager should be placed; balance unchanged
+    # No wager should be placed; balance unchanged.
     count = await conn.fetchval(
         "SELECT COUNT(*) FROM wagers WHERE user_id = $1 AND bet_id = $2",
         alice["id"], bet["id"],
@@ -410,7 +350,7 @@ async def test_leaderboard_order_after_resolution(conn):
     alice = await add_user(conn, 1, "alice")  # will win big
     bob   = await add_user(conn, 2, "bob")    # will win smaller
     carol = await add_user(conn, 3, "carol")  # will lose
-    dave  = await add_user(conn, 4, "dave")   # no bet, stays at 1000
+    await add_user(conn, 4, "dave")           # no bet, stays at 1000
 
     admin = await add_user(conn, 99, "admin")
     bet = await create_simple_bet(conn, "Leaderboard test", yes_odds=3.00, no_odds=2.00, created_by=admin["id"])
@@ -424,7 +364,6 @@ async def test_leaderboard_order_after_resolution(conn):
     await resolve_simple_bet(conn, bet_id, "yes")
 
     board = await get_leaderboard(conn)
-    names = [r["username"] for r in board]
 
     # admin is in the DB too; filter to our four players for assertion clarity
     # alice 1400, bob 1200, dave 1000, carol 850
@@ -481,3 +420,108 @@ async def test_leaderboard_multiple_bets(conn):
     board = [r for r in await get_leaderboard(conn) if r["username"] in {"alice", "bob"}]
     assert board[0]["username"] == "alice"
     assert board[1]["username"] == "bob"
+
+
+# ── tests: resolution is status-guarded and idempotent ─────────────────────────
+
+@pytest.mark.asyncio
+async def test_double_resolve_simple_pays_once(conn):
+    """Resolving an already-resolved simple bet is a no-op (no double payout)."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Double resolve", 2.0, 2.0, created_by=admin["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    await lock_bet(conn, bet["id"])
+
+    winners = await db.resolve_bet(bet["id"], "yes")
+    assert winners is not None and len(winners) == 1
+    # 1000 - 200 + 200*2.0 = 1200
+    assert await get_balance(conn, alice["id"]) == pytest.approx(1200.0)
+
+    # Second resolve must do nothing: returns None, balance unchanged.
+    again = await db.resolve_bet(bet["id"], "yes")
+    assert again is None
+    assert await get_balance(conn, alice["id"]) == pytest.approx(1200.0)
+
+
+@pytest.mark.asyncio
+async def test_double_resolve_winner_pays_once(conn):
+    """Resolving an already-resolved winner bet is a no-op."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_winner_bet(conn, "Winner double", [
+        {"label": "A", "odds": 2.0},
+        {"label": "B", "odds": 3.0},
+    ], created_by=admin["id"])
+    opt_a = bet["options"][0]["id"]
+
+    await place_wager(conn, alice["id"], bet["id"], "opt", 100.0, option_id=opt_a)
+    await lock_bet(conn, bet["id"])
+
+    winners = await db.resolve_winner_bet(bet["id"], opt_a)
+    assert winners is not None and len(winners) == 1
+    # 1000 - 100 + 100*2.0 = 1100
+    assert await get_balance(conn, alice["id"]) == pytest.approx(1100.0)
+
+    again = await db.resolve_winner_bet(bet["id"], opt_a)
+    assert again is None
+    assert await get_balance(conn, alice["id"]) == pytest.approx(1100.0)
+
+
+@pytest.mark.asyncio
+async def test_resolve_requires_locked_bet(conn):
+    """An open (never-locked) bet cannot be resolved; no payout occurs."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Still open", 2.0, 2.0, created_by=admin["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    # No lock_bet() call → status is 'open'.
+    winners = await db.resolve_bet(bet["id"], "yes")
+    assert winners is None
+    # Balance reflects only the placed wager (1000 - 200), no payout.
+    assert await get_balance(conn, alice["id"]) == pytest.approx(800.0)
+
+
+# ── tests: revert resolution (clawback) ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_revert_resolved_bet_claws_back_payout(conn):
+    """Reverting a resolved bet returns it to locked and claws back winnings."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Revert me", 2.0, 2.0, created_by=admin["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes")
+    assert await get_balance(conn, alice["id"]) == pytest.approx(1200.0)
+
+    ok = await db.revert_resolved_bet(bet["id"])
+    assert ok is True
+    # Payout (400) clawed back → 800; bet returns to locked.
+    assert await get_balance(conn, alice["id"]) == pytest.approx(800.0)
+    reverted = await db.get_bet(bet["id"])
+    assert reverted["status"] == "locked"
+    assert reverted["result"] is None
+
+
+@pytest.mark.asyncio
+async def test_revert_clamps_balance_at_zero(conn):
+    """If a winner already spent the payout, clawback clamps at 0, not negative."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Spent it", 2.0, 2.0, created_by=admin["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes")  # alice → 1200
+
+    # Drain alice's balance to 100 so a 400 clawback would go negative.
+    await conn.execute("UPDATE users SET balance = 100 WHERE id = $1", alice["id"])
+
+    ok = await db.revert_resolved_bet(bet["id"])
+    assert ok is True
+    # Clamped at 0 rather than violating CHECK (balance >= 0).
+    assert await get_balance(conn, alice["id"]) == pytest.approx(0.0)

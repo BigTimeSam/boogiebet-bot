@@ -1,0 +1,29 @@
+[tool.ruff]
+# bot/ modules import each other by bare name (run with bot/ as the script dir).
+line-length = 120
+target-version = "py312"
+extend-exclude = ["results/index.html"]
+
+[tool.ruff.lint]
+# Pragmatic starter set: pyflakes (F), a subset of pycodestyle (E/W), import
+# sorting (I), and pyupgrade (UP). Expand over time.
+select = ["E4", "E7", "E9", "F", "W", "I", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["db", "handlers", "admin", "texts", "constants"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["bot"]
+ignore_missing_imports = true   # python-telegram-bot / asyncpg stubs not installed
+check_untyped_defs = true
+warn_unused_ignores = true
+# Gradual typing: don't fail the build on missing annotations yet.
+disallow_untyped_defs = false
+
+# pytest config lives in pytest.ini (single source of truth).
+
+[tool.pyright]
+# bot/ modules import each other by bare name; tell the analyzer where to look.
+extraPaths = ["bot"]
+reportMissingImports = "warning"

@@ -1,5 +1,5 @@
-import os
 import functools
+import os
 
 _HEADER_TEMPLATE = (
     "🎰 boogieBet {version} – On aika selvittää, kuka tietää ja kuka ei (vaikka proffahan sen tietää).\n"
@@ -84,11 +84,13 @@ BET_LOCKED_OK = "🔒 Vetokohde #{id} lukittu. Ei enää muutoksia tai vetoja."
 
 BET_ALREADY_LOCKED = "Vetokohde on jo lukittu tai ratkaistu."
 
+BET_NOT_LOCKED = "🔒 Vetokohde #{id} pitää lukita ennen ratkaisua."
+
 INVALID_SIDE = "Valitse 'kyllä' tai 'ei'."
 
 INVALID_AMOUNT = "❌ Syötä kokonaisluku euroissa (esim. 50 tai 200)."
 
-INVALID_ODDS = "❌ Kertoimien täytyy olla lukuja suurempia kuin 1.0 (esim. 3.50 1.25)."
+INVALID_ODDS = "❌ Kertoimien täytyy olla lukuja väliltä 1.0–999.99 (esim. 3.50 1.25)."
 
 INVALID_COMMAND = "Väärä komento. Käytä: {usage}"
 

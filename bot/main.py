@@ -1,12 +1,12 @@
 import logging
 import os
-import traceback
+
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
-    CommandHandler,
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
@@ -14,8 +14,9 @@ from telegram.ext import (
 
 load_dotenv()
 
-import handlers
-import admin
+# Imported after load_dotenv() so the bot modules see the .env values on import.
+import admin  # noqa: E402
+import handlers  # noqa: E402
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

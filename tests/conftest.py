@@ -1,76 +1,88 @@
+"""Test fixtures.
+
+The schema is loaded from the project's single source of truth — ``init.sql`` —
+and the real ``db`` module pool is initialised against the same test database, so
+tests exercise production code (``bot/db.py``) rather than re-implementations.
+
+Set ``DATABASE_URL`` to a PostgreSQL instance before running (e.g. the local
+Docker Compose ``db`` service). Each test gets a clean slate.
 """
-Test fixtures: spin up a fresh schema in the test DB before each test,
-tear it down after.  Set DATABASE_URL env var to a PostgreSQL instance
-before running (e.g. the local Docker Compose db service).
-"""
-import asyncio
 import os
+import sys
+from unittest.mock import MagicMock
+
 import asyncpg
-import pytest
 import pytest_asyncio
+
+# Make the bot package importable (so tests can `import db`) and the tests dir
+# importable (so tests can `import fakes`).
+ROOT = os.path.dirname(os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(ROOT, "bot"))
+sys.path.insert(0, os.path.dirname(__file__))
+
+# python-telegram-bot isn't a test dependency; stub it so handler modules import.
+# The handlers build telegram objects and hand them to the (faked) bot without
+# introspecting them, so MagicMock stand-ins are sufficient.
+for _mod in ("telegram", "telegram.ext", "telegram.error"):
+    sys.modules.setdefault(_mod, MagicMock())
 
 # Allow DATABASE_URL override; fall back to the Compose default.
 TEST_DB_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://boogiebet:boogiebet@localhost:5432/boogiebet",
 )
+# db.get_pool() reads DATABASE_URL from the environment.
+os.environ["DATABASE_URL"] = TEST_DB_URL
 
-DDL = """
-CREATE TABLE IF NOT EXISTS users (
-    id          SERIAL PRIMARY KEY,
-    telegram_id BIGINT UNIQUE NOT NULL,
-    username    VARCHAR(255),
-    balance     NUMERIC(10,2) DEFAULT 1000.00,
-    is_admin    BOOLEAN DEFAULT FALSE,
-    created_at  TIMESTAMP DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS bets (
-    id          SERIAL PRIMARY KEY,
-    title       TEXT NOT NULL,
-    yes_odds    NUMERIC(5,2) NOT NULL DEFAULT 0,
-    no_odds     NUMERIC(5,2) NOT NULL DEFAULT 0,
-    bet_type    VARCHAR(10) NOT NULL DEFAULT 'simple',
-    status      VARCHAR(20) DEFAULT 'open',
-    result      TEXT,
-    created_by  INTEGER REFERENCES users(id),
-    created_at  TIMESTAMP DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS bet_options (
-    id          SERIAL PRIMARY KEY,
-    bet_id      INTEGER REFERENCES bets(id) ON DELETE CASCADE,
-    label       TEXT NOT NULL,
-    odds        NUMERIC(5,2) NOT NULL,
-    position    INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS wagers (
-    id          SERIAL PRIMARY KEY,
-    user_id     INTEGER REFERENCES users(id),
-    bet_id      INTEGER REFERENCES bets(id),
-    side        VARCHAR(3) NOT NULL,
-    option_id   INTEGER REFERENCES bet_options(id),
-    amount      NUMERIC(10,2) NOT NULL,
-    created_at  TIMESTAMP DEFAULT NOW(),
-    UNIQUE (user_id, bet_id)
-);
-CREATE TABLE IF NOT EXISTS settings (
-    key   VARCHAR(50) PRIMARY KEY,
-    value TEXT NOT NULL
-);
-INSERT INTO settings (key, value) VALUES ('game_finished', 'false') ON CONFLICT DO NOTHING;
-"""
+INIT_SQL = os.path.join(ROOT, "init.sql")
+
+import db  # noqa: E402  (import after sys.path/env setup above)
+
+
+async def _ensure_schema():
+    """Create the base schema from init.sql, then initialise the db pool.
+
+    init.sql must run before db.get_pool() triggers db._migrate(), because the
+    baseline ALTERs there assume the tables already exist (mirrors production,
+    where Docker runs init.sql before the bot starts).
+    """
+    setup = await asyncpg.connect(TEST_DB_URL)
+    try:
+        with open(INIT_SQL, encoding="utf-8") as fh:
+            await setup.execute(fh.read())
+    finally:
+        await setup.close()
+    # Triggers _migrate() + _apply_migrations() against the now-present schema.
+    await db.get_pool()
 
 
 @pytest_asyncio.fixture
 async def conn():
-    """Isolated connection with its own schema; rolled back after each test."""
+    """Clean DB per test; yields a raw connection for setup/assertions.
+
+    Production code under test uses the shared db pool; this connection (on the
+    same database, autocommit) is for arranging fixtures and reading results.
+    """
+    # pytest-asyncio runs each test on a fresh event loop, but db._pool is a
+    # module-global bound to the loop it was created on. Build a fresh pool on
+    # THIS test's loop and tear it down here (on the same loop), otherwise
+    # asyncpg raises "got Future attached to a different loop" / "loop is closed".
+    db._pool = None
+    await _ensure_schema()
+    pool = await db.get_pool()
+    async with pool.acquire() as c:
+        await c.execute(
+            "TRUNCATE TABLE wagers, bet_options, bets, users RESTART IDENTITY CASCADE"
+        )
+        await c.execute(
+            "UPDATE settings SET value = 'false' WHERE key = 'game_finished'"
+        )
+
     connection = await asyncpg.connect(TEST_DB_URL)
-    await connection.execute(DDL)
-    # Reset sequences and data between tests
-    await connection.execute(
-        "TRUNCATE TABLE wagers, bet_options, bets, users RESTART IDENTITY CASCADE"
-    )
-    await connection.execute(
-        "UPDATE settings SET value = 'false' WHERE key = 'game_finished'"
-    )
-    yield connection
-    await connection.close()
+    try:
+        yield connection
+    finally:
+        await connection.close()
+        if db._pool is not None:
+            await db._pool.close()
+            db._pool = None
