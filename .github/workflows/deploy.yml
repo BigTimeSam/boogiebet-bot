@@ -136,6 +136,9 @@ jobs:
             docker compose logs --tail=50 bot
             exit 1
           fi
+          # Start the periodic pg_dump backup service (non-gating: its failure
+          # must not fail the deploy).
+          docker compose up -d db-backup || echo "::warning::db-backup did not start"
           docker image prune -f
 
       - name: Tag release

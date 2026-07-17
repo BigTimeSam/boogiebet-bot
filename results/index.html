@@ -23,9 +23,17 @@
     const { useState, useEffect, useMemo } = React;
 
     /* ── Utilities ─────────────────────────────────────────────────────────── */
-    const fmt   = (n) => (n ?? 0).toFixed(0) + '\u00a0€';
-    const fmtD  = (n) => (n ?? 0).toFixed(2) + '\u00a0€';
-    const fmtSign = (n) => ((n ?? 0) >= 0 ? '+' : '') + (n ?? 0).toFixed(0) + '\u00a0€';
+    /* One money formatter: Finnish grouping and decimal comma, cents shown
+       only when present, so integer euros stay clean and a cashout's cents
+       no longer make a row disagree with its column total. */
+    const euro = (n, sign = false) => {
+      const v = n ?? 0;
+      const s = new Intl.NumberFormat('fi-FI', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(v);
+      return (sign && v >= 0 ? '+' : '') + s + '\u00a0€';
+    };
+    const fmt   = (n) => euro(n);
+    const fmtD  = (n) => euro(n);
+    const fmtSign = (n) => euro(n, true);
     const pnlCls = (n) => (n > 0 ? 'text-emerald-400' : n < 0 ? 'text-red-400' : 'text-zinc-500');
     const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -378,15 +386,22 @@
     /* ── Players view ───────────────────────────────────────────────────────── */
     function PlayersView({ data, selected, onSelect }) {
 
+      // Fall back to the top player when `selected` matches no one (a shared or
+      // stale hash link): otherwise the dropdown shows the first player while the
+      // cards and table sit empty — a broken-looking half-state.
       const player = useMemo(
-        () => data.leaderboard.find(p => p.username === selected),
+        () => data.leaderboard.find(p => p.username === selected)
+              || data.leaderboard[0],
         [selected, data.leaderboard]
       );
 
       const playerBets = useMemo(() => {
-        if (!selected) return [];
+        if (!player) return [];
         return data.bets.flatMap(bet => {
-          const w = bet.wagers.find(w => w.username === selected);
+          // Join by id, not display name: usernames aren't unique and anonymous
+          // players share a fallback name, so a name match can pull in the wrong
+          // player's wager.
+          const w = bet.wagers.find(w => w.user_id === player.id);
           if (!w) return [];
           return [{
             ...w,
@@ -415,7 +430,7 @@
           <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
             <h2 className="text-lg font-semibold text-zinc-200">👤 Pelaajan vedot</h2>
             <select
-              value={selected}
+              value={player ? player.username : ''}
               onChange={e => onSelect(e.target.value)}
               className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-600 cursor-pointer"
             >

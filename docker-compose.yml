@@ -1,7 +1,15 @@
+x-logging: &default-logging
+  # Cap container logs so they can't grow unbounded and fill the host disk.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: boogiebet
       POSTGRES_USER: boogiebet
@@ -17,13 +25,50 @@ services:
       timeout: 5s
       retries: 10
 
+  # Periodic pg_dump so the game (saldos, bets, the new ledger) survives a lost
+  # volume. Dumps go to ./backups on the host; keeps the 14 most recent.
+  db-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: boogiebet
+      BACKUP_INTERVAL_SECONDS: "86400"
+      KEEP: "14"
+    volumes:
+      - ./backups:/backups
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          ts=$$(date -u +%Y%m%d_%H%M%S)
+          if pg_dump -h db -U boogiebet boogiebet | gzip > "/backups/boogiebet_$$ts.sql.gz.tmp"; then
+            mv "/backups/boogiebet_$$ts.sql.gz.tmp" "/backups/boogiebet_$$ts.sql.gz"
+            echo "backup ok: boogiebet_$$ts.sql.gz"
+          else
+            echo "backup FAILED at $$ts" >&2
+            rm -f "/backups/boogiebet_$$ts.sql.gz.tmp"
+          fi
+          ls -1t /backups/boogiebet_*.sql.gz 2>/dev/null | tail -n +$$((KEEP + 1)) | xargs -r rm -f
+          sleep "$$BACKUP_INTERVAL_SECONDS"
+        done
+
   bot:
     build: .
     env_file: .env
+    logging: *default-logging
+    environment:
+      PERSISTENCE_PATH: /home/appuser/data/persistence.pickle
     depends_on:
       db:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - botdata:/home/appuser/data
     healthcheck:
       # The bot serves no HTTP; it beats a heartbeat file from its event loop
       # (see bot/health.py) and this asks whether that beat is still fresh.
@@ -35,3 +80,4 @@ services:
 
 volumes:
   pgdata:
+  botdata:

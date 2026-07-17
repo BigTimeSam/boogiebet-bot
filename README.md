@@ -6,13 +6,15 @@ Telegram-veikkausbotti kaveriporukoille. Jokainen pelaaja aloittaa 1 000 €:n v
 
 - Virtuaalisaldot ja kerroinpohjaiset vedot (min 20 €, max 200 € per kohde, säädettävissä per kohde)
 - Kaksi vetotyyppiä: **Kyllä/Ei** ja **Voittajaveto** (useampi vaihtoehto, max 6)
-- Adminit luovat, lukitsevat/avaavat ja ratkaisevat vetokohteita
+- Adminit luovat, lukitsevat/avaavat ja ratkaisevat vetokohteita — ja voivat **peruuttaa ratkaisun** (voitot peritään takaisin)
 - Voitot maksetaan automaattisesti ratkaisun yhteydessä
-- Cashout ennen lukitsemista — palauttaa 95 % panoksesta
+- Cashout ennen lukitsemista — palauttaa 95 % panoksesta (kokonaisina euroina), kaksivaiheisella vahvistuksella
 - Kohteiden järjestys säädettävissä painoarvoilla
 - Kertoimien muuttaminen lukituille kohteille joihin ei ole vielä vedetty
-- Tulostaulu aktiivisine maksimivoittoineen ja lopulliset tulokset pelin päätyttyä
+- Tulostaulu, **PnL-näkymä** (nettovoitto/-tappio) ja lopulliset tulokset pelin päätyttyä
 - Voittajat-näkymä listaa ratkaistujen kohteiden voittajat
+- Admin voi lisätä/vähentää saldoa (`/lisaasaldo`) ja merkitä pelaajan kilpailun ulkopuolelle (`/kepuli`)
+- Kaikki rahaliikenne kirjataan `balance_events`-tapahtumalokiin (kuka, mitä, milloin)
 - Inline-napit kaikkiin keskeisiin toimintoihin
 
 ## Vaatimukset
@@ -90,9 +92,10 @@ Veto voidaan päivittää ennen kohteen lukitsemista — uusi summa lisätään 
 | Nappi | Kuvaus |
 |---|---|
 | 📋 Kohteet | Avoimet ja lukitut vetokohteet (piilotettu pelin päätyttyä) |
-| 🎯 Omat vedot | Omat vedot tiloineen ja voitto/tappio-tiedot |
+| 🎯 Omat vedot | Omat vedot tiloineen ja voitto/tappio-tiedot; cashout-napit avoimille vedoille |
 | 🏆 Tulostaulu | Pelaajat järjestyksessä saldoineen ja maksimivoittoineen |
 | 🥇 Voittajat | Ratkaistujen kohteiden voittajat (näkyy kun vähintään yksi kohde ratkaistu) |
+| 📈 PnL | Kaikkien pelaajien nettovoitto/-tappio ratkaistuista vedoista |
 | 🔧 Admin-paneeli | Pelin hallinta (vain admineille) |
 
 ### Adminina
@@ -128,6 +131,11 @@ Pelin päätyttyä admin-paneelissa näkyy vain **Resetoi kaikki**.
 | `/weight <id> <paino>` | Aseta kohteen painoarvo — suurempi luku nostaa kohteen korkeammalle Vetokohteet-listalla |
 | `/kertoimet <id> <kyllä> <ei>` | Muuta Kyllä/Ei-kohteen kertoimet (vain lukittu, 0 vetoa) |
 | `/kertoimet <id> Vaihtoehto @ kerroin \| ...` | Muuta voittajavedon kertoimet (vain lukittu, 0 vetoa) |
+| `/lisaasaldo <handle\|id> <summa>` | Lisää (tai vähennä, negatiivisella summalla) pelaajan saldoa. Jos nimimerkki ei ole yksikäsitteinen, käytä telegram-id:tä |
+| `/kepuli <handle\|id> <summa>` | Merkitse pelaaja viralliselle tulostaululle kuulumattomaksi (käsin lisätty saldo); `0` poistaa merkinnän |
+| `/broadcast <viesti>` | Lähetä viesti kaikille pelaajille |
+
+> 🔒 **/admin-yritykset:** viisi väärää salasanaa lukitsee rekisteröitymisen 15 minuutiksi, ja `/admin`-viesti poistetaan heti ettei salasana jää chattiin.
 
 > 💡 **Kertoimien muutos:** Admin-paneelin ✏️-nappi näyttää copy-pastettavan `/kertoimet`-komennon nykyisillä arvoilla. Muokkaa kertoimet ja lähetä takaisin.
 
@@ -149,7 +157,7 @@ open → locked → resolved
 
 #### Voiton laskenta
 
-Voitto = panos × kerroin. Häviäjät menettävät panoksensa, voittajat saavat kertoimen mukaisen maksun saldolleen.
+Voittajan saldolle maksetaan **panos × kerroin** (bruttopalautus), josta panos on jo veloitettu vedon lyöntihetkellä. Näkymissä (Omat vedot, PnL, tulossivu) voitto esitetään **nettona** eli `panos × kerroin − panos`. Häviäjät menettävät panoksensa.
 
 #### Pelin lopetus
 
@@ -204,18 +212,29 @@ git clone git@github.com:BigTimeSam/boogiebet-bot.git .
 
 | Taulu | Kuvaus |
 |---|---|
-| `users` | Pelaajat, saldot, admin-status |
-| `bets` | Vetokohteet, tyyppi (`simple`/`winner`), kertoimet, status, tulos, panosrajat, painoarvo |
+| `users` | Pelaajat, saldot, admin-status, `bonus_balance` (kepuli-merkintä) |
+| `bets` | Vetokohteet, tyyppi (`simple`/`winner`), kertoimet, status, tulos, panosrajat, painoarvo, `resolved_by`/`resolved_at` |
 | `bet_options` | Voittajavedon vaihtoehdot (label, kerroin, järjestys) |
 | `wagers` | Pelaajien vedot — yksi veto per pelaaja per kohde |
+| `balance_events` | Append-only rahaliikenteen loki: jokainen saldomuutos syineen ja tekijöineen |
 | `settings` | Pelin tila (`game_finished`) |
+
+Skeeman muutokset tehdään `migrations/`-hakemiston numeroituina tiedostoina (ajetaan kerran käynnistyksessä ja kirjataan `schema_migrations`-tauluun), ei `init.sql`:ää muokkaamalla — näin muutokset päätyvät myös olemassa olevaan tuotantokantaan.
+
+## Varmuuskopiot
+
+`db-backup`-palvelu (docker-compose.yml) ajaa `pg_dump`-varmuuskopion päivittäin hakemistoon `./backups`, säilyttäen 14 viimeisintä. Palautus:
+
+```bash
+gunzip -c backups/boogiebet_YYYYMMDD_HHMMSS.sql.gz | docker compose exec -T db psql -U boogiebet -d boogiebet
+```
 
 ## Testit
 
 Integraatiotestit ajetaan oikeaa PostgreSQL-kantaa vasten:
 
 ```bash
-python3 -m pytest tests/
+DATABASE_URL=postgresql://boogiebet:boogiebet@localhost:5432/boogiebet_test python3 -m pytest tests/
 ```
 
-Testit vaativat `DATABASE_URL`-ympäristömuuttujan tai käynnissä olevan Docker Compose -kannan oletusarvoilla (`localhost:5432`). Jokainen testi saa puhtaan kannan — data nollataan ennen jokaista testiä.
+`DATABASE_URL` on **pakollinen** ja sen on osoitettava kantaan, jonka nimi päättyy `_test` — testit ajavat `TRUNCATE`n ennen jokaista testiä, ja tämä suoja estää tuotantokannan tyhjentämisen vahingossa. Jokainen testi saa puhtaan kannan.

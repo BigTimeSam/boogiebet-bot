@@ -200,6 +200,7 @@ async def main():
 
         leaderboard.append({
             "rank": rank,
+            "id": uid,  # stable join key; usernames aren't unique and can be null
             "username": username,
             "balance": float(u["balance"]),
             "pnl": round(float(u["balance"]) - STARTING_BALANCE, 2),

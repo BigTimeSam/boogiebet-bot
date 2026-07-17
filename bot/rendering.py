@@ -102,7 +102,9 @@ async def _build_my_bets(user):
             # The whole-euro amount actually credited on cashout (see db.cancel_wager).
             refund = betting.cashout_refund(amount)
             label = f"💸 Cashout #{w['bet_id']} (+{refund:.0f} €)"
-            keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
+            # Route through a confirmation step: cashout is irreversible and forfeits
+            # part of the stake, like the admin panel's destructive actions.
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel_confirm:{w['bet_id']}")])
     keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])
     return msg, InlineKeyboardMarkup(keyboard)
 

@@ -99,15 +99,23 @@ async def get_pool():
 
 
 async def get_or_create_user(telegram_id: int, username: str):
+    """Fetch or create a user atomically.
+
+    A single INSERT ... ON CONFLICT closes the SELECT-then-INSERT race (a /start
+    double-tap could otherwise hit the unique constraint) and keeps the stored
+    username current. `xmax = 0` is true only for a fresh insert, so it doubles
+    as the "was this newly created" flag.
+    """
     pool = await get_pool()
-    row = await pool.fetchrow("SELECT * FROM users WHERE telegram_id = $1", telegram_id)
-    if row:
-        return dict(row), False
     row = await pool.fetchrow(
-        "INSERT INTO users (telegram_id, username) VALUES ($1, $2) RETURNING *",
+        "INSERT INTO users (telegram_id, username) VALUES ($1, $2) "
+        "ON CONFLICT (telegram_id) DO UPDATE SET username = EXCLUDED.username "
+        "RETURNING *, (xmax = 0) AS created",
         telegram_id, username,
     )
-    return dict(row), True
+    user = dict(row)
+    created = user.pop("created")
+    return user, created
 
 
 async def get_user(telegram_id: int):
@@ -139,7 +147,29 @@ async def get_user_by_telegram_id(telegram_id: int):
     return await get_user(telegram_id)
 
 
-async def add_balance(user_id: int, amount: float):
+async def _record_event(conn, user_id, delta, balance_after, reason, actor_id=None, bet_id=None):
+    """Append one row to the money ledger (must run inside the caller's
+    transaction so the event and the balance change commit together)."""
+    await conn.execute(
+        "INSERT INTO balance_events (user_id, delta, balance_after, reason, actor_id, bet_id) "
+        "VALUES ($1, $2, $3, $4, $5, $6)",
+        user_id, delta, balance_after, reason, actor_id, bet_id,
+    )
+
+
+async def get_balance_events(user_id: int, limit: int = 50) -> list[dict]:
+    """Recent ledger entries for a user, newest first — the audit trail for
+    'why is this balance what it is'."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT delta, balance_after, reason, actor_id, bet_id, created_at "
+        "FROM balance_events WHERE user_id = $1 ORDER BY id DESC LIMIT $2",
+        user_id, limit,
+    )
+    return [dict(r) for r in rows]
+
+
+async def add_balance(user_id: int, amount: float, actor_id: int | None = None):
     """Adjust a user's balance and return the new balance (None if it would go
     negative and was rejected).
 
@@ -149,12 +179,18 @@ async def add_balance(user_id: int, amount: float):
     (bonus > 0) at once.
     """
     pool = await get_pool()
-    return await pool.fetchval(
-        "UPDATE users SET balance = balance + $1, "
-        "bonus_balance = GREATEST(bonus_balance + $1, 0) "
-        "WHERE id = $2 AND balance + $1 >= 0 RETURNING balance",
-        amount, user_id,
-    )
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            balance = await conn.fetchval(
+                "UPDATE users SET balance = balance + $1, "
+                "bonus_balance = GREATEST(bonus_balance + $1, 0) "
+                "WHERE id = $2 AND balance + $1 >= 0 RETURNING balance",
+                amount, user_id,
+            )
+            if balance is None:
+                return None
+            await _record_event(conn, user_id, amount, balance, "admin_adjust", actor_id=actor_id)
+            return float(balance)
 
 
 async def set_bonus_balance(user_id: int, amount: float):
@@ -185,12 +221,6 @@ async def get_active_bets():
         "FROM bets b LEFT JOIN users u ON u.id = b.created_by "
         "WHERE b.status IN ('open', 'locked') ORDER BY b.weight DESC, b.id"
     )
-    return [dict(r) for r in rows]
-
-
-async def get_open_bets():
-    pool = await get_pool()
-    rows = await pool.fetch("SELECT * FROM bets WHERE status = 'open' ORDER BY weight DESC, id")
     return [dict(r) for r in rows]
 
 
@@ -363,7 +393,7 @@ async def unlock_bet(bet_id: int):
     return True, bool(row["is_first_open"])
 
 
-async def resolve_bet(bet_id: int, result: str):
+async def resolve_bet(bet_id: int, result: str, actor_id: int | None = None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -374,9 +404,10 @@ async def resolve_bet(bet_id: int, result: str):
             # side 'opt', so a yes/no result would match nobody, lose every stake
             # and leave a result that revert_resolved_bet() cannot parse back.
             updated = await conn.execute(
-                "UPDATE bets SET status = 'resolved', result = $1 "
+                "UPDATE bets SET status = 'resolved', result = $1, "
+                "resolved_by = $3, resolved_at = NOW() "
                 "WHERE id = $2 AND status = 'locked' AND bet_type = 'simple'",
-                result, bet_id,
+                result, bet_id, actor_id,
             )
             if updated != "UPDATE 1":
                 return None
@@ -397,6 +428,10 @@ async def resolve_bet(bet_id: int, result: str):
                         "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
                         payout, w["user_id"],
                     )
+                    await _record_event(
+                        conn, w["user_id"], payout, float(new_balance), "payout",
+                        actor_id=actor_id, bet_id=bet_id,
+                    )
                     # profit is NET (payout − stake); payout is the gross credit.
                     # Views show net so the same wager reads the same everywhere.
                     winners.append({
@@ -412,7 +447,7 @@ async def resolve_bet(bet_id: int, result: str):
             return winners
 
 
-async def resolve_winner_bet(bet_id: int, winning_option_id: int):
+async def resolve_winner_bet(bet_id: int, winning_option_id: int, actor_id: int | None = None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -426,9 +461,10 @@ async def resolve_winner_bet(bet_id: int, winning_option_id: int):
             # so a race can never pay winners twice. bet_type mirrors the
             # simple-bet guard there.
             updated = await conn.execute(
-                "UPDATE bets SET status = 'resolved', result = $1 "
+                "UPDATE bets SET status = 'resolved', result = $1, "
+                "resolved_by = $3, resolved_at = NOW() "
                 "WHERE id = $2 AND status = 'locked' AND bet_type = 'winner'",
-                str(winning_option_id), bet_id,
+                str(winning_option_id), bet_id, actor_id,
             )
             if updated != "UPDATE 1":
                 return None
@@ -447,6 +483,10 @@ async def resolve_winner_bet(bet_id: int, winning_option_id: int):
                     new_balance = await conn.fetchval(
                         "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
                         payout, w["user_id"],
+                    )
+                    await _record_event(
+                        conn, w["user_id"], payout, float(new_balance), "payout",
+                        actor_id=actor_id, bet_id=bet_id,
                     )
                     winners.append({
                         "username": w["username"] or f"user{w['telegram_id']}",
@@ -496,6 +536,9 @@ async def place_wager(user_id: int, bet_id: int, side: str, amount: float, optio
                     "VALUES ($1, $2, $3, $4, $5)",
                     user_id, bet_id, side, amount, option_id,
                 )
+            # Ledger delta is the net balance change: any prior stake is refunded
+            # and the new stake charged.
+            await _record_event(conn, user_id, refund - amount, float(balance), "wager", bet_id=bet_id)
             return float(balance), existing is not None
 
 
@@ -519,14 +562,15 @@ async def cancel_wager(user_id: int, bet_id: int):
             if not wager:
                 return None
             refund = betting.cashout_refund(wager["amount"])
-            await conn.execute(
-                "UPDATE users SET balance = balance + $1 WHERE id = $2",
+            balance = await conn.fetchval(
+                "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
                 refund, user_id,
             )
             await conn.execute(
                 "DELETE FROM wagers WHERE user_id = $1 AND bet_id = $2",
                 user_id, bet_id,
             )
+            await _record_event(conn, user_id, refund, float(balance), "cashout", bet_id=bet_id)
             return refund
 
 
@@ -609,7 +653,24 @@ async def get_all_users_wager_stats():
     return {tid: (v[0], v[1]) for tid, v in stats.items()}
 
 
-async def revert_resolved_bet(bet_id: int) -> bool:
+async def _claw_back(conn, user_id, payout, bet_id, actor_id):
+    """Remove a payout on revert and record the ledger event with the ACTUAL
+    delta — the clamp at 0 may remove less than the full payout, and the ledger
+    must reflect what really happened to the balance."""
+    old = float(await conn.fetchval(
+        "SELECT balance FROM users WHERE id = $1 FOR UPDATE", user_id
+    ))
+    new_balance = float(await conn.fetchval(
+        "UPDATE users SET balance = GREATEST(balance - $1, 0) WHERE id = $2 RETURNING balance",
+        payout, user_id,
+    ))
+    await _record_event(
+        conn, user_id, new_balance - old, new_balance, "payout_revert",
+        actor_id=actor_id, bet_id=bet_id,
+    )
+
+
+async def revert_resolved_bet(bet_id: int, actor_id: int | None = None) -> bool:
     """Revert a resolved bet back to locked status, clawing back winner payouts."""
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -644,10 +705,7 @@ async def revert_resolved_bet(bet_id: int) -> bool:
                     payout = float(w["amount"]) * float(w["odds"])
                     # Clamp at 0: a winner may have already spent the payout, and
                     # CHECK (balance >= 0) would otherwise abort the whole revert.
-                    await conn.execute(
-                        "UPDATE users SET balance = GREATEST(balance - $1, 0) WHERE id = $2",
-                        payout, w["user_id"],
-                    )
+                    await _claw_back(conn, w["user_id"], payout, bet_id, actor_id)
             else:
                 wagers = await conn.fetch(
                     "SELECT w.user_id, w.amount FROM wagers w "
@@ -658,10 +716,7 @@ async def revert_resolved_bet(bet_id: int) -> bool:
                 for w in wagers:
                     payout = float(w["amount"]) * odds
                     # Clamp at 0 (see winner branch above).
-                    await conn.execute(
-                        "UPDATE users SET balance = GREATEST(balance - $1, 0) WHERE id = $2",
-                        payout, w["user_id"],
-                    )
+                    await _claw_back(conn, w["user_id"], payout, bet_id, actor_id)
             await conn.execute(
                 "UPDATE bets SET status = 'locked', result = NULL WHERE id = $1",
                 bet_id,

@@ -9,7 +9,7 @@ from rendering import (
     _build_realized_pnl_all,
     _build_winners,
 )
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from ui import (
     _bet_type_keyboard,
@@ -328,7 +328,14 @@ async def bet_side_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
         return
 
-    _, bet_id_str, side = query.data.split(":")
+    parts = query.data.split(":")
+    # Reject anything but the two expected sides: callback_data is client-supplied
+    # and 'side' is written straight to wagers.side, so an allowlist keeps a
+    # forged button from storing an arbitrary value.
+    if len(parts) != 3 or parts[2] not in ("yes", "no") or not parts[1].isdigit():
+        await query.answer("Virheellinen valinta.", show_alert=True)
+        return
+    _, bet_id_str, side = parts
     bet_id = int(bet_id_str)
 
     bet = await db.get_bet(bet_id)
@@ -446,6 +453,36 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             odds=float(option["odds"]), balance=float(user["balance"]),
                             existing=existing_info, amount_hint=amount_hint,
                         )), _cancel_keyboard())
+
+
+async def cancel_wager_confirm_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Show a confirmation before the irreversible cashout."""
+    query = update.callback_query
+    await query.answer()
+    user = await db.get_user(query.from_user.id)
+    if not user:
+        return
+    bet_id = int(query.data.split(":")[2])
+    wager = await db.get_user_wager(user["id"], bet_id)
+    bet = await db.get_bet(bet_id)
+    if not wager or not bet or bet["status"] != "open":
+        await _show_callback(ctx, query.message.chat_id, query.message.message_id,
+                             texts.H("Vetoa ei voi enää perua — kohde ei ole auki."),
+                             await _main_keyboard(user))
+        return
+    amount = int(float(wager["amount"]))
+    refund = betting.cashout_refund(amount)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Kyllä, cashout", callback_data=f"wager:cancel:{bet_id}")],
+        [InlineKeyboardButton("❌ Peruuta", callback_data="nav:omat")],
+    ])
+    await _show_callback(
+        ctx, query.message.chat_id, query.message.message_id,
+        texts.H(texts.CASHOUT_CONFIRM.format(
+            bet_id=bet_id, title=bet["title"], amount=amount, refund=refund,
+        )),
+        keyboard,
+    )
 
 
 async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

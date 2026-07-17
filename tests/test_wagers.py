@@ -778,3 +778,210 @@ async def test_money_conserved_through_resolve_and_revert(conn):
     await db.revert_resolved_bet(bet["id"])
 
     assert await _total_equity(conn) == pytest.approx(start)
+
+
+# ── balance ledger (append-only money trail) ────────────────────────────────────
+
+async def _events(conn, user_id):
+    return await conn.fetch(
+        "SELECT delta, balance_after, reason, actor_id, bet_id "
+        "FROM balance_events WHERE user_id = $1 ORDER BY id", user_id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ledger_records_wager_and_payout(conn):
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Ledger", 2.0, 2.0, created_by=admin["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes", actor_id=admin["id"])
+
+    events = await _events(conn, alice["id"])
+    reasons = [e["reason"] for e in events]
+    assert reasons == ["wager", "payout"]
+    # Deltas: -200 stake, +400 payout. balance_after tracks the running balance.
+    assert float(events[0]["delta"]) == pytest.approx(-200.0)
+    assert float(events[0]["balance_after"]) == pytest.approx(800.0)
+    assert float(events[1]["delta"]) == pytest.approx(400.0)
+    assert float(events[1]["balance_after"]) == pytest.approx(1200.0)
+    # The payout event records who resolved the bet.
+    assert events[1]["actor_id"] == admin["id"]
+    assert events[1]["bet_id"] == bet["id"]
+
+
+@pytest.mark.asyncio
+async def test_ledger_sum_equals_balance_change(conn):
+    """The sum of a user's ledger deltas must equal their balance minus the
+    starting balance — the ledger's core invariant."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Invariant", 3.0, 1.5, created_by=admin["id"])
+    await place_wager(conn, alice["id"], bet["id"], "yes", 100.0)
+    await db.add_balance(alice["id"], 50, actor_id=admin["id"])
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes", actor_id=admin["id"])
+
+    events = await _events(conn, alice["id"])
+    total_delta = sum(float(e["delta"]) for e in events)
+    balance = await get_balance(conn, alice["id"])
+    assert total_delta == pytest.approx(balance - 1000.0)
+
+
+@pytest.mark.asyncio
+async def test_ledger_records_admin_adjust_with_actor(conn):
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    await db.add_balance(alice["id"], 300, actor_id=admin["id"])
+
+    events = await _events(conn, alice["id"])
+    assert len(events) == 1
+    assert events[0]["reason"] == "admin_adjust"
+    assert float(events[0]["delta"]) == pytest.approx(300.0)
+    assert events[0]["actor_id"] == admin["id"]
+
+
+@pytest.mark.asyncio
+async def test_ledger_revert_delta_matches_actual_clawback(conn):
+    """When a clawback clamps at 0, the ledger records the real (smaller) delta,
+    not the nominal payout."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Clamp", 2.0, 2.0, created_by=admin["id"])
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes", actor_id=admin["id"])  # +400 → 1200
+    await conn.execute("UPDATE users SET balance = 100 WHERE id = $1", alice["id"])
+
+    await db.revert_resolved_bet(bet["id"], actor_id=admin["id"])
+
+    revert_event = (await _events(conn, alice["id"]))[-1]
+    assert revert_event["reason"] == "payout_revert"
+    # Balance went 100 → 0, so the recorded delta is -100 (not the nominal -400).
+    assert float(revert_event["delta"]) == pytest.approx(-100.0)
+    assert float(revert_event["balance_after"]) == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_wagers_amount_check_rejects_nonpositive(conn):
+    """The DB constraint is the last line of defence for the NaN/negative-stake
+    bug, independent of the handler."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Guard", 2.0, 2.0, created_by=admin["id"])
+
+    with pytest.raises(Exception):  # asyncpg.CheckViolationError
+        await conn.execute(
+            "INSERT INTO wagers (user_id, bet_id, side, amount) VALUES ($1, $2, 'yes', -50)",
+            alice["id"], bet["id"],
+        )
+    with pytest.raises(Exception):
+        await conn.execute(
+            "INSERT INTO wagers (user_id, bet_id, side, amount) VALUES ($1, $2, 'yes', 'NaN')",
+            alice["id"], bet["id"],
+        )
+
+
+# ── odds updates guarded against existing wagers (finding #40) ──────────────────
+
+@pytest.mark.asyncio
+async def test_update_simple_odds_succeeds_on_locked_bet_without_wagers(conn):
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Odds", 2.0, 2.0, created_by=admin["id"])
+    await lock_bet(conn, bet["id"])
+    ok = await db.update_simple_bet_odds(bet["id"], 3.0, 1.5)
+    assert ok is True
+    updated = await db.get_bet(bet["id"])
+    assert float(updated["yes_odds"]) == pytest.approx(3.0)
+
+
+@pytest.mark.asyncio
+async def test_update_simple_odds_refused_when_wagers_exist(conn):
+    """Odds are read at resolution, so changing them after a wager exists would
+    retroactively change payouts — the guard must forbid it."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Odds", 2.0, 2.0, created_by=admin["id"])
+    await conn.execute("UPDATE bets SET status = 'open' WHERE id = $1", bet["id"])
+    await place_wager(conn, alice["id"], bet["id"], "yes", 100.0)
+    await lock_bet(conn, bet["id"])
+
+    ok = await db.update_simple_bet_odds(bet["id"], 5.0, 5.0)
+
+    assert ok is False
+    unchanged = await db.get_bet(bet["id"])
+    assert float(unchanged["yes_odds"]) == pytest.approx(2.0)
+
+
+@pytest.mark.asyncio
+async def test_update_simple_odds_refused_on_open_bet(conn):
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Odds", 2.0, 2.0, created_by=admin["id"])
+    await conn.execute("UPDATE bets SET status = 'open' WHERE id = $1", bet["id"])
+    assert await db.update_simple_bet_odds(bet["id"], 3.0, 3.0) is False
+
+
+@pytest.mark.asyncio
+async def test_update_winner_odds_refused_when_wagers_exist(conn):
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_winner_bet(
+        conn, "W", [{"label": "A", "odds": 2.0}, {"label": "B", "odds": 3.0}],
+        created_by=admin["id"],
+    )
+    await conn.execute("UPDATE bets SET status = 'open' WHERE id = $1", bet["id"])
+    await place_wager(conn, alice["id"], bet["id"], "opt", 100.0, option_id=bet["options"][0]["id"])
+    await lock_bet(conn, bet["id"])
+
+    ok = await db.update_winner_bet_option_odds(bet["id"], [(0, 9.0)])
+    assert ok is False
+    opts = await db.get_bet_options(bet["id"])
+    assert float(opts[0]["odds"]) == pytest.approx(2.0)
+
+
+# ── revert of a winner bet (finding #42) ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_revert_winner_bet_claws_back_and_relocks(conn):
+    alice = await add_user(conn, 1, "alice")
+    bob = await add_user(conn, 2, "bob")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_winner_bet(
+        conn, "W", [{"label": "A", "odds": 2.0}, {"label": "B", "odds": 3.0}],
+        created_by=admin["id"],
+    )
+    opt_a = bet["options"][0]["id"]
+    await place_wager(conn, alice["id"], bet["id"], "opt", 100.0, option_id=opt_a)
+    await place_wager(conn, bob["id"], bet["id"], "opt", 100.0, option_id=bet["options"][1]["id"])
+    await lock_bet(conn, bet["id"])
+    await db.resolve_winner_bet(bet["id"], opt_a, actor_id=admin["id"])
+    assert await get_balance(conn, alice["id"]) == pytest.approx(1100.0)  # 900 + 200
+
+    ok = await db.revert_resolved_bet(bet["id"], actor_id=admin["id"])
+
+    assert ok is True
+    reverted = await db.get_bet(bet["id"])
+    assert reverted["status"] == "locked"
+    assert reverted["result"] is None
+    # alice's payout clawed back to her post-stake balance; bob (loser) untouched.
+    assert await get_balance(conn, alice["id"]) == pytest.approx(900.0)
+    assert await get_balance(conn, bob["id"]) == pytest.approx(900.0)
+
+
+# ── atomic user creation (finding #17) ──────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_get_or_create_user_created_flag_and_username_update(conn):
+    user, created = await db.get_or_create_user(500, "firstname")
+    assert created is True
+    assert user["username"] == "firstname"
+
+    # Second call: existing user, created False, username refreshed.
+    user2, created2 = await db.get_or_create_user(500, "newname")
+    assert created2 is False
+    assert user2["username"] == "newname"
+    assert user2["id"] == user["id"]
+    # Only one row exists (no duplicate from the "insert" path).
+    assert await conn.fetchval("SELECT COUNT(*) FROM users WHERE telegram_id = 500") == 1

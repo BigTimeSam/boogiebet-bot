@@ -389,3 +389,56 @@ async def test_cashout_on_locked_bet_shows_alert(conn):
     assert any(a["show_alert"] for a in query.answers), "the refusal must be shown as an alert"
     # Wager untouched, balance unchanged.
     assert await db.get_user_wager(user["id"], bet["id"]) is not None
+
+
+# ── callback-data validation (finding #23) ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_bet_side_callback_rejects_forged_side(conn):
+    """side is written straight to wagers.side; a forged value must be refused."""
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+    query = FakeQuery(f"bet:{bet['id']}:hax", user_id=1)
+
+    await handlers.bet_side_callback(make_callback_update(query), FakeContext(FakeBot()))
+
+    assert any(a["show_alert"] for a in query.answers)
+    assert await db.get_user_wager(user["id"], bet["id"]) is None
+
+
+# ── cashout confirmation step (finding #51) ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cashout_confirm_does_not_cash_out(conn):
+    """The confirm step only shows a prompt — the wager must still be intact."""
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+    await handlers._process_wager(FakeContext(FakeBot()), 1, user, bet["id"], "yes", 100.0)
+
+    query = FakeQuery(f"wager:cancel_confirm:{bet['id']}", user_id=1)
+    await handlers.cancel_wager_confirm_callback(make_callback_update(query), FakeContext(FakeBot()))
+
+    # Still there, still charged — nothing refunded yet.
+    assert await db.get_user_wager(user["id"], bet["id"]) is not None
+    assert float((await db.get_user(1))["balance"]) == 900.0
+
+
+@pytest.mark.asyncio
+async def test_cashout_confirm_then_execute_cashes_out(conn):
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+    await handlers._process_wager(FakeContext(FakeBot()), 1, user, bet["id"], "yes", 100.0)
+
+    # Confirm screen, then the actual cashout button.
+    await handlers.cancel_wager_confirm_callback(
+        make_callback_update(FakeQuery(f"wager:cancel_confirm:{bet['id']}", user_id=1)),
+        FakeContext(FakeBot()),
+    )
+    await handlers.cancel_wager_callback(
+        make_callback_update(FakeQuery(f"wager:cancel:{bet['id']}", user_id=1)),
+        FakeContext(FakeBot()),
+    )
+
+    assert await db.get_user_wager(user["id"], bet["id"]) is None
+    # 900 + 95 (whole-euro refund of 100) = 995.
+    assert float((await db.get_user(1))["balance"]) == 995.0

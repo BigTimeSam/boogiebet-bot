@@ -32,14 +32,6 @@ ALL_BETS_LOCKED = "Kaikki vetokohteet ovat lukittuja eikä niihin voi enää ase
 
 BET_LIST_HEADER = "🎯 = Olet panostanut kyseiseen kohteeseen tätä valintaa.\n\n📋 Vetokohteet\n\n"
 
-BET_ROW_OPEN = "#{id} {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n\n"
-
-BET_ROW_OPEN_WITH_WAGER = "#{id} {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n   ✅ Vetosi: {side} {amount:.0f} €\n\n"
-
-BET_ROW_LOCKED = "#{id} 🔒 {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}  · lukittu\n\n"
-
-BET_ROW_LOCKED_WITH_WAGER = "#{id} 🔒 {title}\n   Kyllä @ {yes_odds:.2f}  |  Ei @ {no_odds:.2f}\n   ✅ Vetosi: {side} {amount:.0f} €  · lukittu\n\n"
-
 ASK_BET_TITLE = (
     "Uusi vetokohde — vaihe 1/2\n\n"
     "Syötä kohteen nimi:"
@@ -130,6 +122,11 @@ GAME_OVER_BLOCK = "❌ Peli on päättynyt, muutoksia ei sallita."
 
 GAME_FINISHED_PERSONAL = "🔒 Peli on päättynyt.\n\nLopullinen saldosi: {balance:.0f} €.\nSija: {rank}/{total}."
 
+GAME_FINISHED_PERSONAL_KEPULI = (
+    "🔒 Peli on päättynyt.\n\nLopullinen saldosi: {balance:.0f} €.\n"
+    "Et ole mukana virallisessa tulostaulussa (saldoa on lisätty käsin)."
+)
+
 ADMIN_WELCOME = "✅ Sinut on rekisteröity adminiksi!"
 
 ADMIN_ALREADY = "Olet jo admin."
@@ -138,16 +135,12 @@ WRONG_PASSWORD = "❌ Väärä salasana."
 
 ADMIN_LOCKED_OUT = "🚫 Liian monta yritystä. Yritä uudelleen 15 minuutin kuluttua."
 
-ADMIN_HELP = (
-    "🔧 Admin-komennot\n\n"
-    "/lukitse <id>\n"
-    "  → lukitse vetokohde (ei enää vetoja tai muutoksia)\n\n"
-    "/ratkaise <id> <kyllä|ei>\n"
-    "  → ratkaise lukittu kohde ja maksa voitot\n\n"
-    "/lopeta\n"
-    "  → lopeta peli ja julkaise lopulliset tulokset\n\n"
-    "/admin <salasana>\n"
-    "  → rekisteröidy adminiksi"
+CASHOUT_CONFIRM = (
+    "⚠️ Cashout — kohde #{bet_id}\n\n"
+    "{title}\n\n"
+    "Panos: {amount:.0f} €\n"
+    "Saat takaisin: {refund:.0f} € (5 % pidätetään).\n\n"
+    "Vetoa ei voi palauttaa cashoutin jälkeen. Vahvistatko?"
 )
 
 BET_RESOLVED_MSG = (

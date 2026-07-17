@@ -121,7 +121,14 @@ async def _main_text(user, name: str = None, is_new: bool = False) -> str:
     if await db.is_game_finished():
         leaderboard = await db.get_leaderboard()
         total = len(leaderboard)
-        rank = next((i for i, r in enumerate(leaderboard, 1) if r["telegram_id"] == user["telegram_id"]), total)
+        rank = next(
+            (i for i, r in enumerate(leaderboard, 1) if r["telegram_id"] == user["telegram_id"]),
+            None,
+        )
+        if rank is None:
+            # Not on the leaderboard (a kepuli, excluded from the ranking). Don't
+            # show a made-up "last" rank; say plainly they're out of the running.
+            return texts.GAME_FINISHED_PERSONAL_KEPULI.format(balance=float(user["balance"]))
         return texts.GAME_FINISHED_PERSONAL.format(
             balance=float(user["balance"]), rank=rank, total=total
         )

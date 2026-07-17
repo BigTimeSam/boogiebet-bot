@@ -13,4 +13,8 @@ RUN useradd --create-home --uid 10001 appuser
 COPY --chown=appuser:appuser . .
 USER appuser
 
+# Writable, appuser-owned dir for the persistence file; a named volume mounts
+# here in compose so state survives container recreation.
+RUN mkdir -p /home/appuser/data
+
 CMD ["python", "bot/main.py"]

@@ -10,6 +10,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    PicklePersistence,
     filters,
 )
 
@@ -17,6 +18,7 @@ load_dotenv()
 
 # Imported after load_dotenv() so the bot modules see the .env values on import.
 import admin  # noqa: E402
+import db  # noqa: E402
 import handlers  # noqa: E402
 import health  # noqa: E402
 
@@ -35,6 +37,10 @@ async def _heartbeat_loop():
 
 
 async def _post_init(app):
+    # Initialise the pool and run migrations here so a migration failure crashes
+    # startup with a clear log line, instead of surfacing to a random player on
+    # the first message that happens to touch the DB.
+    await db.get_pool()
     # Beat once before polling starts so the container reports healthy promptly,
     # then keep beating from the running loop.
     health.beat()
@@ -52,7 +58,15 @@ async def error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE):
 
 def main():
     token = os.environ["BOT_TOKEN"]
-    app = ApplicationBuilder().token(token).post_init(_post_init).build()
+    builder = ApplicationBuilder().token(token).post_init(_post_init)
+    # Persist per-user state (input flow, menu message id) across restarts so a
+    # deploy doesn't silently drop a wager a player was mid-way through entering.
+    # Gated on an env var so it can be switched off without a code change if a
+    # persistence file ever gets in the way of startup.
+    persistence_path = os.environ.get("PERSISTENCE_PATH")
+    if persistence_path:
+        builder = builder.persistence(PicklePersistence(filepath=persistence_path))
+    app = builder.build()
 
     # User commands
     app.add_handler(CommandHandler("start", handlers.start))
@@ -85,6 +99,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handlers.bet_side_callback, pattern=r"^bet:"))
     app.add_handler(CallbackQueryHandler(handlers.winner_opt_callback, pattern=r"^opt:"))
     app.add_handler(CallbackQueryHandler(handlers.cancel_input_callback, pattern=r"^input:cancel"))
+    app.add_handler(CallbackQueryHandler(handlers.cancel_wager_confirm_callback, pattern=r"^wager:cancel_confirm:"))
     app.add_handler(CallbackQueryHandler(handlers.cancel_wager_callback, pattern=r"^wager:cancel:"))
 
     # ForceReply / free-text input (must be last)

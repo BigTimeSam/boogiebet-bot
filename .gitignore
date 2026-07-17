@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 results/data.json
+# DB backups (db-backup service writes here). Ignored so the deploy's
+# `git clean -fd` keeps them — it removes untracked files but not ignored ones.
+backups/

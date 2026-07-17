@@ -148,15 +148,6 @@ async def register(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(texts.H(texts.ADMIN_WELCOME), reply_markup=admin_panel_keyboard(game_done))
 
 
-async def admin_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    user = await db.get_user(update.effective_user.id)
-    if not user or not user["is_admin"]:
-        await update.message.reply_text(texts.H(texts.NOT_ADMIN))
-        return
-    game_done = await db.is_game_finished()
-    await update.message.reply_text(texts.H(texts.ADMIN_PANEL), reply_markup=admin_panel_keyboard(game_done))
-
-
 async def cmd_lock(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = await db.get_user(update.effective_user.id)
     if not user or not user["is_admin"]:
@@ -214,7 +205,7 @@ async def cmd_resolve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if bet["bet_type"] != "simple":
         await update.message.reply_text(texts.H(texts.BET_IS_WINNER_TYPE.format(id=bet_id)))
         return
-    winners = await db.resolve_bet(bet_id, result)
+    winners = await db.resolve_bet(bet_id, result, actor_id=user["id"])
     if winners is None:
         await update.message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))
         return
@@ -436,7 +427,7 @@ async def _admin_dispatch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         if bet["bet_type"] == "winner":
             winning_option_id = int(value)
-            winners = await db.resolve_winner_bet(bet_id, winning_option_id)
+            winners = await db.resolve_winner_bet(bet_id, winning_option_id, actor_id=user["id"])
             if winners is None:
                 await query.answer("❌ Virheellinen vaihtoehto tälle vedolle.", show_alert=True)
                 return
@@ -444,7 +435,7 @@ async def _admin_dispatch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             winning = next((o for o in options if o["id"] == winning_option_id), None)
             result_fi = f"🏆 {winning['label']}" if winning else f"Option {winning_option_id}"
         else:
-            winners = await db.resolve_bet(bet_id, value)
+            winners = await db.resolve_bet(bet_id, value, actor_id=user["id"])
             if winners is None:
                 await query.answer(texts.BET_RESOLVED.format(id=bet_id), show_alert=True)
                 return
@@ -505,7 +496,7 @@ async def _admin_dispatch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not bet or bet["status"] != "resolved":
             await query.answer(texts.BET_NOT_FOUND.format(id=bet_id), show_alert=True)
             return
-        success = await db.revert_resolved_bet(bet_id)
+        success = await db.revert_resolved_bet(bet_id, actor_id=user["id"])
         if success:
             await query.answer(f"↩️ Kohteen #{bet_id} ratkaisu peruutettu.")
             game_done = await db.is_game_finished()
@@ -807,7 +798,7 @@ async def cmd_add_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if err:
         await update.message.reply_text(texts.H(err))
         return
-    new_balance = await db.add_balance(target["id"], amount)
+    new_balance = await db.add_balance(target["id"], amount, actor_id=user["id"])
     if new_balance is None:
         await update.message.reply_text(texts.H(
             f"❌ Saldon vähennys epäonnistuu: {target['username']} ei voi mennä miinukselle."
