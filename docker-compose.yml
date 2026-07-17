@@ -24,6 +24,14 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      # The bot serves no HTTP; it beats a heartbeat file from its event loop
+      # (see bot/health.py) and this asks whether that beat is still fresh.
+      test: ["CMD", "python", "bot/health.py"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   pgdata:

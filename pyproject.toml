@@ -10,7 +10,7 @@ extend-exclude = ["results/index.html"]
 select = ["E4", "E7", "E9", "F", "W", "I", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["db", "handlers", "admin", "texts", "constants"]
+known-first-party = ["db", "handlers", "admin", "texts", "constants", "health"]
 
 [tool.mypy]
 python_version = "3.12"

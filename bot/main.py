@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -17,12 +18,27 @@ load_dotenv()
 # Imported after load_dotenv() so the bot modules see the .env values on import.
 import admin  # noqa: E402
 import handlers  # noqa: E402
+import health  # noqa: E402
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+
+async def _heartbeat_loop():
+    """Mark the bot alive for the container healthcheck, forever."""
+    while True:
+        health.beat()
+        await asyncio.sleep(health.HEARTBEAT_INTERVAL)
+
+
+async def _post_init(app):
+    # Beat once before polling starts so the container reports healthy promptly,
+    # then keep beating from the running loop.
+    health.beat()
+    app.create_task(_heartbeat_loop())
 
 
 async def error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE):
@@ -36,7 +52,7 @@ async def error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE):
 
 def main():
     token = os.environ["BOT_TOKEN"]
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(token).post_init(_post_init).build()
 
     # User commands
     app.add_handler(CommandHandler("start", handlers.start))

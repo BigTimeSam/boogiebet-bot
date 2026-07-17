@@ -127,7 +127,15 @@ jobs:
           cd "$DEPLOY_PATH"
           docker compose up -d db
           docker compose build bot
-          docker compose up -d bot
+          # --wait blocks until the bot's healthcheck passes and fails the step
+          # if it doesn't. Without it `up -d` returns the moment the container
+          # is created, so a bot that crash-loops on startup still deploys green.
+          if ! docker compose up -d --wait --wait-timeout 120 bot; then
+            echo "::error::Bot did not become healthy; see logs below."
+            docker compose ps bot
+            docker compose logs --tail=50 bot
+            exit 1
+          fi
           docker image prune -f
 
       - name: Tag release
