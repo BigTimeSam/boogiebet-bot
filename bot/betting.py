@@ -5,6 +5,7 @@ No telegram or database dependencies, so these can be unit-tested directly
 wager win / what is the P&L" rules that were previously copy-pasted across
 several rendering functions.
 """
+import math
 
 
 def odds_for(bet_type, side, yes_odds, no_odds, option_odds) -> float:
@@ -82,11 +83,15 @@ def parse_wager_amount(text: str):
     """Parse an 'integer euros' wager input (comma or dot accepted).
 
     Returns the amount as a float, or None if it is not a positive whole number.
+
+    The isfinite() check must come first: float() accepts "nan" and "inf", every
+    comparison against NaN is False (so it would pass validate_wager untouched,
+    and Postgres agrees that NaN >= 0), and int() raises on both.
     """
     try:
         amount = float(text.strip().replace(",", "."))
     except (ValueError, AttributeError):
         return None
-    if amount != int(amount) or amount <= 0:
+    if not math.isfinite(amount) or amount != int(amount) or amount <= 0:
         return None
     return float(int(amount))

@@ -98,3 +98,67 @@ async def test_cmd_resolve_rejects_unlocked_bet(conn):
     await admin.cmd_resolve(make_update("", user_id=1), ctx)
 
     assert (await db.get_bet(bet["id"]))["status"] == "open"  # not resolved
+
+
+# ── cmd_resolve type guard ─────────────────────────────────────────────────────
+
+async def _mk_locked_winner_bet(conn):
+    bet = dict(await conn.fetchrow(
+        "INSERT INTO bets (title, yes_odds, no_odds, bet_type, status) "
+        "VALUES ('Voittajaveto', 0, 0, 'winner', 'locked') RETURNING *"
+    ))
+    bet["options"] = [dict(await conn.fetchrow(
+        "INSERT INTO bet_options (bet_id, label, odds, position) "
+        "VALUES ($1, 'A', 2.0, 0) RETURNING *",
+        bet["id"],
+    ))]
+    return bet
+
+
+@pytest.mark.asyncio
+async def test_cmd_resolve_refuses_winner_bet(conn):
+    """/ratkaise is the simple-bet path; the panel handles winner bets.
+
+    Without the guard the bet resolved to 'yes', matching none of its 'opt'
+    wagers: every stake lost, no winners, and revert could not undo it.
+    """
+    admin_user = await _mk_user(conn, tid=1, username="admin", is_admin=True)
+    player = await _mk_user(conn, tid=2, username="alice")
+    bet = await _mk_locked_winner_bet(conn)
+    await conn.execute(
+        "INSERT INTO wagers (user_id, bet_id, side, option_id, amount) "
+        "VALUES ($1, $2, 'opt', $3, 100)",
+        player["id"], bet["id"], bet["options"][0]["id"],
+    )
+    update = make_update(f"/ratkaise {bet['id']} kyllä", user_id=1, username="admin")
+    ctx = FakeContext(args=[str(bet["id"]), "kyllä"])
+
+    await admin.cmd_resolve(update, ctx)
+
+    unchanged = await db.get_bet(bet["id"])
+    assert unchanged["status"] == "locked", "winner bet must not resolve via /ratkaise"
+    assert unchanged["result"] is None
+    assert any("voittajaveto" in r.lower() for r in update.message.replies), \
+        f"admin should be told why, got: {update.message.replies}"
+    assert admin_user["is_admin"] is True
+
+
+@pytest.mark.asyncio
+async def test_cmd_resolve_still_resolves_simple_bet(conn):
+    """The guard must not block the supported path."""
+    await _mk_user(conn, tid=1, username="admin", is_admin=True)
+    player = await _mk_user(conn, tid=2, username="alice")
+    bet = await _mk_bet(conn, status="locked")
+    await conn.execute(
+        "INSERT INTO wagers (user_id, bet_id, side, amount) VALUES ($1, $2, 'yes', 100)",
+        player["id"], bet["id"],
+    )
+    ctx = FakeContext(args=[str(bet["id"]), "kyllä"])
+
+    await admin.cmd_resolve(make_update("", user_id=1, username="admin"), ctx)
+
+    resolved = await db.get_bet(bet["id"])
+    assert resolved["status"] == "resolved"
+    assert resolved["result"] == "yes"
+    # 1000 (never charged: wager inserted directly) + 100 × 2.0 payout
+    assert float((await db.get_user(2))["balance"]) == pytest.approx(1200.0)

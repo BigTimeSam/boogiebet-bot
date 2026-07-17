@@ -86,6 +86,11 @@ BET_ALREADY_LOCKED = "Vetokohde on jo lukittu tai ratkaistu."
 
 BET_NOT_LOCKED = "🔒 Vetokohde #{id} pitää lukita ennen ratkaisua."
 
+BET_IS_WINNER_TYPE = (
+    "🏆 Vetokohde #{id} on voittajaveto — sitä ei voi ratkaista kyllä/ei-tuloksella.\n"
+    "Ratkaise se admin-paneelin kautta, niin pääset valitsemaan voittaneen vaihtoehdon."
+)
+
 INVALID_SIDE = "Valitse 'kyllä' tai 'ei'."
 
 INVALID_AMOUNT = "❌ Syötä kokonaisluku euroissa (esim. 50 tai 200)."

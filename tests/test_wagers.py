@@ -525,3 +525,125 @@ async def test_revert_clamps_balance_at_zero(conn):
     assert ok is True
     # Clamped at 0 rather than violating CHECK (balance >= 0).
     assert await get_balance(conn, alice["id"]) == pytest.approx(0.0)
+
+
+# ── delete_bet status guard ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_delete_bet_refuses_resolved_and_keeps_wagers(conn):
+    """Deleting a resolved bet must be a no-op.
+
+    The wagers/bet_options deletes are unconditional, so without a status guard
+    a resolved bet loses its wagers (and the Voittajat view empties) while the
+    caller is told the delete failed.
+    """
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Already called", 2.0, 2.0, created_by=admin["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes")
+    balance_after_resolve = await get_balance(conn, alice["id"])
+
+    deleted = await db.delete_bet(bet["id"])
+
+    assert deleted is False
+    wagers_left = await conn.fetchval(
+        "SELECT COUNT(*) FROM wagers WHERE bet_id = $1", bet["id"]
+    )
+    assert wagers_left == 1, "a resolved bet's wagers must survive a refused delete"
+    assert await db.get_bet(bet["id"]) is not None
+    assert await get_balance(conn, alice["id"]) == pytest.approx(balance_after_resolve)
+
+
+@pytest.mark.asyncio
+async def test_delete_bet_refuses_resolved_winner_bet_keeps_options(conn):
+    """Same guard, winner bets: bet_options must survive too."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_winner_bet(
+        conn, "Who wins",
+        [{"label": "A", "odds": 2.0}, {"label": "B", "odds": 3.0}],
+        created_by=admin["id"],
+    )
+    opt_a = bet["options"][0]["id"]
+
+    await place_wager(conn, alice["id"], bet["id"], "opt", 100.0, option_id=opt_a)
+    await lock_bet(conn, bet["id"])
+    await db.resolve_winner_bet(bet["id"], opt_a)
+
+    deleted = await db.delete_bet(bet["id"])
+
+    assert deleted is False
+    assert await conn.fetchval("SELECT COUNT(*) FROM wagers WHERE bet_id = $1", bet["id"]) == 1
+    assert await conn.fetchval("SELECT COUNT(*) FROM bet_options WHERE bet_id = $1", bet["id"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_bet_still_refunds_open_bet(conn):
+    """The guard must not break the supported path: deleting an open bet
+    refunds every stake in full."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Called off", 2.0, 2.0, created_by=admin["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    assert await get_balance(conn, alice["id"]) == pytest.approx(800.0)
+
+    deleted = await db.delete_bet(bet["id"])
+
+    assert deleted is True
+    assert await get_balance(conn, alice["id"]) == pytest.approx(1000.0)
+    assert await conn.fetchval("SELECT COUNT(*) FROM wagers WHERE bet_id = $1", bet["id"]) == 0
+    assert await db.get_bet(bet["id"]) is None
+
+
+# ── resolve type guards ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_resolve_bet_refuses_winner_bet(conn):
+    """resolve_bet() is the simple-bet path. A winner bet's wagers all carry
+    side 'opt', so resolving one as yes/no matches nobody: every stake is lost
+    and revert_resolved_bet() can no longer parse result back to an option id.
+    """
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_winner_bet(
+        conn, "Who wins",
+        [{"label": "A", "odds": 2.0}, {"label": "B", "odds": 3.0}],
+        created_by=admin["id"],
+    )
+    opt_a = bet["options"][0]["id"]
+
+    await place_wager(conn, alice["id"], bet["id"], "opt", 100.0, option_id=opt_a)
+    await lock_bet(conn, bet["id"])
+    balance_before = await get_balance(conn, alice["id"])
+
+    winners = await db.resolve_bet(bet["id"], "yes")
+
+    assert winners is None, "a winner bet must not resolve through the simple path"
+    still_locked = await db.get_bet(bet["id"])
+    assert still_locked["status"] == "locked"
+    assert still_locked["result"] is None
+    assert await get_balance(conn, alice["id"]) == pytest.approx(balance_before)
+
+
+@pytest.mark.asyncio
+async def test_resolve_winner_bet_refuses_simple_bet(conn):
+    """The mirror guard: a simple bet must not resolve through the winner path."""
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    simple = await create_simple_bet(conn, "Yes or no", 2.0, 2.0, created_by=admin["id"])
+    # An option row belonging to a *different* winner bet.
+    other = await create_winner_bet(
+        conn, "Other", [{"label": "A", "odds": 2.0}], created_by=admin["id"]
+    )
+
+    await place_wager(conn, alice["id"], simple["id"], "yes", 100.0)
+    await lock_bet(conn, simple["id"])
+
+    winners = await db.resolve_winner_bet(simple["id"], other["options"][0]["id"])
+
+    assert winners is None
+    assert (await db.get_bet(simple["id"]))["status"] == "locked"
