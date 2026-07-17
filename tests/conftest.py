@@ -20,10 +20,11 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(ROOT, "bot"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-# python-telegram-bot isn't a test dependency; stub it so handler modules import.
-# The handlers build telegram objects and hand them to the (faked) bot without
-# introspecting them, so MagicMock stand-ins are sufficient.
-for _mod in ("telegram", "telegram.ext", "telegram.error"):
+# python-telegram-bot and python-dotenv aren't test dependencies; stub them so
+# the bot modules import. The handlers build telegram objects and hand them to
+# the (faked) bot without introspecting them, so MagicMock stand-ins are
+# sufficient; load_dotenv() is a no-op here because the env is set below.
+for _mod in ("telegram", "telegram.ext", "telegram.error", "dotenv"):
     sys.modules.setdefault(_mod, MagicMock())
 
 # Allow DATABASE_URL override; fall back to the Compose default.
