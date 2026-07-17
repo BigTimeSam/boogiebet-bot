@@ -136,6 +136,8 @@ ADMIN_ALREADY = "Olet jo admin."
 
 WRONG_PASSWORD = "❌ Väärä salasana."
 
+ADMIN_LOCKED_OUT = "🚫 Liian monta yritystä. Yritä uudelleen 15 minuutin kuluttua."
+
 ADMIN_HELP = (
     "🔧 Admin-komennot\n\n"
     "/lukitse <id>\n"

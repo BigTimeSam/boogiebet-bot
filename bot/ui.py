@@ -11,12 +11,36 @@ from telegram.ext import ContextTypes
 
 import db
 import texts
+from constants import TELEGRAM_MAX_MESSAGE
 
 logger = logging.getLogger(__name__)
 
+_TRUNCATION_NOTICE = "\n\n… (viesti katkaistu — se oli liian pitkä)"
+
+
+def _fit(text: str) -> str:
+    """Keep a message under Telegram's hard limit.
+
+    A body over 4096 chars is rejected outright; without this the caller would
+    log a debug line no one sees and then resend the same too-long text, turning
+    any oversized view into a dead end. Truncating degrades gracefully instead.
+    """
+    if len(text) <= TELEGRAM_MAX_MESSAGE:
+        return text
+    keep = TELEGRAM_MAX_MESSAGE - len(_TRUNCATION_NOTICE)
+    return text[:keep] + _TRUNCATION_NOTICE
+
 
 async def _show(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, reply_markup=None):
-    msg_id = ctx.user_data.get("menu_message_id")
+    text = _fit(text)
+    # Reuse the cached menu message only if it belongs to THIS chat. user_data is
+    # per-user, not per-chat, so a message id stored from another chat would edit
+    # the wrong message — menu_chat_id was written for this check but never read.
+    msg_id = (
+        ctx.user_data.get("menu_message_id")
+        if ctx.user_data.get("menu_chat_id") == chat_id
+        else None
+    )
     if msg_id:
         try:
             await ctx.bot.edit_message_text(

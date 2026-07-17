@@ -14,7 +14,7 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: boogiebet
+          POSTGRES_DB: boogiebet_test
           POSTGRES_USER: boogiebet
           POSTGRES_PASSWORD: boogiebet
         ports:
@@ -26,7 +26,9 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://boogiebet:boogiebet@localhost:5432/boogiebet
+      # A throwaway database; conftest.py refuses to truncate anything not
+      # named like a test database.
+      DATABASE_URL: postgresql://boogiebet:boogiebet@localhost:5432/boogiebet_test
 
     steps:
       - uses: actions/checkout@v4
@@ -49,5 +51,16 @@ jobs:
         run: mypy
         continue-on-error: true
 
+      - name: Import smoke test (real python-telegram-bot)
+        # The tests stub telegram/, so a broken PTB upgrade (e.g. from Dependabot)
+        # would otherwise pass CI and only fail at runtime in production. This
+        # installs the real runtime deps and imports the entry point; main() is
+        # behind __main__ so no polling starts.
+        run: |
+          pip install -r requirements.txt
+          BOT_TOKEN=ci-smoke-test python -c "import sys; sys.path.insert(0, 'bot'); import main; assert callable(main.main)"
+
       - name: Pytest
-        run: python -m pytest tests/ -v --cov=bot --cov-report=term-missing
+        # --cov-fail-under locks in a coverage floor so it can't silently erode;
+        # raise it as coverage improves. Set below the current level for headroom.
+        run: python -m pytest tests/ -v --cov=bot --cov-report=term-missing --cov-fail-under=40

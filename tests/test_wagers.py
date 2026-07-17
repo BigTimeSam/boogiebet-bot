@@ -647,3 +647,134 @@ async def test_resolve_winner_bet_refuses_simple_bet(conn):
 
     assert winners is None
     assert (await db.get_bet(simple["id"]))["status"] == "locked"
+
+
+# ── add_balance / bonus_balance visibility ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_add_balance_returns_new_balance(conn):
+    alice = await add_user(conn, 1, "alice")
+    new_balance = await db.add_balance(alice["id"], 250)
+    assert float(new_balance) == pytest.approx(1250.0)
+
+
+@pytest.mark.asyncio
+async def test_negative_add_balance_keeps_player_on_leaderboard(conn):
+    """A withdrawal must not drive bonus_balance negative, which used to drop the
+    player off BOTH the leaderboard (bonus = 0) and the kepuli list (bonus > 0)."""
+    alice = await add_user(conn, 1, "alice")
+    await db.add_balance(alice["id"], -100)  # withdraw
+
+    assert float((await db.get_user(1))["balance"]) == pytest.approx(900.0)
+    assert float((await db.get_user(1))["bonus_balance"]) == pytest.approx(0.0)
+    board = await db.get_leaderboard()
+    assert any(r["telegram_id"] == 1 for r in board), "player must stay on the leaderboard"
+    assert all(r["telegram_id"] != 1 for r in await db.get_kepulit())
+
+
+@pytest.mark.asyncio
+async def test_add_balance_topup_then_revert_restores_leaderboard(conn):
+    alice = await add_user(conn, 1, "alice")
+    await db.add_balance(alice["id"], 500)   # kepuli now
+    assert any(r["telegram_id"] == 1 for r in await db.get_kepulit())
+    await db.add_balance(alice["id"], -500)  # revert the top-up
+    # bonus back to 0 → back on the leaderboard, off the kepuli list.
+    assert any(r["telegram_id"] == 1 for r in await db.get_leaderboard())
+    assert all(r["telegram_id"] != 1 for r in await db.get_kepulit())
+
+
+@pytest.mark.asyncio
+async def test_add_balance_rejects_overdraw(conn):
+    alice = await add_user(conn, 1, "alice")
+    result = await db.add_balance(alice["id"], -5000)  # more than the balance
+    assert result is None
+    assert float((await db.get_user(1))["balance"]) == pytest.approx(1000.0)
+
+
+# ── cancel_wager whole-euro refund ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cancel_wager_refunds_whole_euros(conn):
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Cashout me", 2.0, 2.0, created_by=admin["id"])
+    await conn.execute("UPDATE bets SET status = 'open' WHERE id = $1", bet["id"])
+
+    await place_wager(conn, alice["id"], bet["id"], "yes", 50.0)  # balance 950
+    refund = await db.cancel_wager(alice["id"], bet["id"])
+
+    # 50 × 0.95 = 47.5 → 47 credited; the balance stays a whole number.
+    assert refund == 47
+    assert await get_balance(conn, alice["id"]) == pytest.approx(997.0)
+    assert await db.get_user_wager(alice["id"], bet["id"]) is None
+
+
+# ── resolve reports NET profit ──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_resolve_bet_profit_is_net(conn):
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    bet = await create_simple_bet(conn, "Net check", 2.0, 2.0, created_by=admin["id"])
+    await place_wager(conn, alice["id"], bet["id"], "yes", 100.0)
+    await lock_bet(conn, bet["id"])
+
+    winners = await db.resolve_bet(bet["id"], "yes")
+
+    assert len(winners) == 1
+    # stake 100 @ 2.0 → payout 200, net profit 100.
+    assert winners[0]["profit"] == pytest.approx(100.0)
+    assert winners[0]["payout"] == pytest.approx(200.0)
+
+
+# ── money conservation across a full round ──────────────────────────────────────
+
+async def _total_equity(conn) -> float:
+    """All money in the game: free balances plus stakes locked in open/locked bets."""
+    balances = float(await conn.fetchval("SELECT COALESCE(SUM(balance), 0) FROM users"))
+    staked = float(await conn.fetchval(
+        "SELECT COALESCE(SUM(w.amount), 0) FROM wagers w "
+        "JOIN bets b ON b.id = w.bet_id WHERE b.status IN ('open', 'locked')"
+    ))
+    return balances + staked
+
+
+@pytest.mark.asyncio
+async def test_money_conserved_through_place_and_resolve(conn):
+    """With a balanced book at even (2.0/2.0) odds the winners' gains exactly
+    fund the losers' losses, so total equity is invariant across placing and
+    resolving. This is the global check the 74 balance-by-balance tests never
+    made; it catches a double-payout or a lost stake that per-player asserts on
+    one bet can miss.
+
+    (Note: fixed-odds betting only conserves money when the book balances — an
+    unbalanced book at fixed odds legitimately creates or destroys money.)"""
+    players = [await add_user(conn, i, f"p{i}") for i in range(1, 6)]
+    admin = await add_user(conn, 99, "admin")
+    start = await _total_equity(conn)
+    assert start == pytest.approx(6 * 1000.0)
+
+    bet = await create_simple_bet(conn, "Coin flip", 2.0, 2.0, created_by=admin["id"])
+    await place_wager(conn, players[0]["id"], bet["id"], "yes", 100.0)
+    await place_wager(conn, players[1]["id"], bet["id"], "yes", 50.0)
+    await place_wager(conn, players[2]["id"], bet["id"], "no", 150.0)  # yes 150 == no 150
+    assert await _total_equity(conn) == pytest.approx(start), "placing wagers moves no money out of the game"
+
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes")
+    assert await _total_equity(conn) == pytest.approx(start)
+
+
+@pytest.mark.asyncio
+async def test_money_conserved_through_resolve_and_revert(conn):
+    alice = await add_user(conn, 1, "alice")
+    admin = await add_user(conn, 99, "admin")
+    start = await _total_equity(conn)
+
+    bet = await create_simple_bet(conn, "Reverted", 2.0, 2.0, created_by=admin["id"])
+    await place_wager(conn, alice["id"], bet["id"], "yes", 200.0)
+    await lock_bet(conn, bet["id"])
+    await db.resolve_bet(bet["id"], "yes")
+    await db.revert_resolved_bet(bet["id"])
+
+    assert await _total_equity(conn) == pytest.approx(start)

@@ -17,7 +17,7 @@ import asyncio
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -54,10 +54,20 @@ async def main():
         )
 
         # ── Users (exclude kepulit – manually credited users) ─────────────────
+        # bonus_balance <= 0 mirrors the bot's leaderboard filter, so a player
+        # whose top-up was reverted (bonus back to 0) isn't lost. Kepuli ids are
+        # collected below to keep them out of the pot/stats too, so the site is
+        # consistently "real players only" rather than excluding them from the
+        # ranking while still counting their stakes.
         users = await conn.fetch(
             "SELECT id, telegram_id, username, balance, bonus_balance, created_at "
-            "FROM users WHERE bonus_balance = 0 ORDER BY balance DESC"
+            "FROM users WHERE bonus_balance <= 0 ORDER BY balance DESC"
         )
+        kepuli_ids = {
+            r["id"] for r in await conn.fetch(
+                "SELECT id FROM users WHERE bonus_balance > 0"
+            )
+        }
 
         # ── Bets with options ──────────────────────────────────────────────────
         bets_raw = await conn.fetch(
@@ -87,6 +97,10 @@ async def main():
 
     finally:
         await conn.close()
+
+    # Drop kepuli players' wagers everywhere (bet totals, stats, leaderboard),
+    # so the numbers match the leaderboard that already excludes them.
+    wagers_raw = [w for w in wagers_raw if w["user_id"] not in kepuli_ids]
 
     wagers_by_bet: dict[int, list] = {}
     for w in wagers_raw:
@@ -125,6 +139,7 @@ async def main():
                 pnl = None
 
             wager_details.append({
+                "user_id": w["user_id"],
                 "username": w["username"] or f"user{w['user_id']}",
                 "side": w["side"],
                 "option_label": w["option_label"] or ("Kyllä" if w["side"] == "yes" else "Ei"),
@@ -173,7 +188,10 @@ async def main():
             if not b or b["status"] != "resolved":
                 bets_open += 1
                 continue
-            wd = next((x for x in b["wagers"] if x["username"] == username), None)
+            # Match on user_id, not the display name: two anonymous players share
+            # the same "user…" fallback, and matching by name would credit one
+            # player's result to the other.
+            wd = next((x for x in b["wagers"] if x["user_id"] == uid), None)
             if wd:
                 if wd["won"]:
                     bets_won += 1
@@ -243,7 +261,10 @@ async def main():
 
     # ── Write output ───────────────────────────────────────────────────────────
     output = {
-        "generated_at": datetime.now().isoformat(),
+        # Timezone-aware (…+00:00) so the page's `new Date()` parses it as an
+        # instant instead of guessing the viewer's local zone (a naive string
+        # showed the update time hours off).
+        "generated_at": datetime.now(UTC).isoformat(),
         "game_finished": game_finished,
         "starting_balance": STARTING_BALANCE,
         "leaderboard": leaderboard,

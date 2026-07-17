@@ -10,6 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import db
 import texts
+from constants import TELEGRAM_MAX_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -25,24 +26,37 @@ def pop_notification(telegram_id: int):
     return _notification_msgs.pop(telegram_id, None)
 
 
-async def _build_open_bets_text(new_bet_id: int = None):
+async def _build_open_bets_text(new_bet_id: int | None = None):
     bets = await db.get_active_bets()
     open_bets = [b for b in bets if b["status"] == "open"]
     if not open_bets:
         return None
+    # Newest first so the freshly-opened bet (and the ones most likely wanted)
+    # survive if the list has to be truncated to fit one Telegram message.
+    open_bets.sort(key=lambda b: b["id"] == new_bet_id, reverse=True)
     lines = ["🎰 Avatut vetokohteet\n"]
+    omitted = 0
     for b in open_bets:
         marker = " 🆕" if b["id"] == new_bet_id else ""
         if b["bet_type"] == "winner":
             options = await db.get_bet_options(b["id"])
             opts = ", ".join(f"{o['label']} @ {float(o['odds']):.2f}" for o in options)
-            lines.append(f"#{b['id']} {b['title']}{marker} — {opts}")
+            line = f"#{b['id']} {b['title']}{marker} — {opts}"
         else:
-            lines.append(f"#{b['id']} {b['title']}{marker} — Kyllä @ {float(b['yes_odds']):.2f} | Ei @ {float(b['no_odds']):.2f}")
+            line = f"#{b['id']} {b['title']}{marker} — Kyllä @ {float(b['yes_odds']):.2f} | Ei @ {float(b['no_odds']):.2f}"
+        # Stop before overflowing Telegram's 4096-char limit, which would fail
+        # the send for every player and surface only as a debug log line.
+        projected = sum(len(x) + 1 for x in lines) + len(line) + 1
+        if projected > TELEGRAM_MAX_MESSAGE - 80:
+            omitted = len(open_bets) - open_bets.index(b)
+            break
+        lines.append(line)
+    if omitted:
+        lines.append(f"\n… ja {omitted} muuta — katso 📋 Kohteet")
     return "\n".join(lines)
 
 
-async def _broadcast_new_bet(bot, bet: dict, options: list = None):
+async def _broadcast_new_bet(bot, bet: dict, options: list | None = None):
     telegram_ids = await db.get_all_telegram_ids()
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📋 Katso kohteita", callback_data="nav:kohteet")]])
     if options:

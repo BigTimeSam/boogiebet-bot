@@ -1,7 +1,7 @@
 import logging
 
 import betting
-from notifications import _broadcast_new_bet, pop_notification
+from notifications import pop_notification
 from rendering import (
     _build_bets,
     _build_leaderboard,
@@ -36,13 +36,26 @@ AWAITING_BET_ODDS = "awaiting_bet_odds"
 AWAITING_WINNER_OPTIONS = "awaiting_winner_options"
 AWAITING_WAGER_LIMITS = "awaiting_wager_limits"
 
+_INPUT_STATE_KEYS = (
+    AWAITING_AMOUNT, AWAITING_BET_TITLE, AWAITING_BET_ODDS, AWAITING_BET_TYPE,
+    AWAITING_WINNER_OPTIONS, AWAITING_WAGER_LIMITS, "state",
+)
+
+
+def _clear_input_state(ctx: ContextTypes.DEFAULT_TYPE):
+    """Drop any pending free-text input flow.
+
+    Without this, "state" survives navigation and a text message typed later is
+    consumed as a wager amount / bet title for a flow the user already left.
+    """
+    for key in _INPUT_STATE_KEYS:
+        ctx.user_data.pop(key, None)
+
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg = update.effective_user
     user, created = await db.get_or_create_user(tg.id, tg.username or tg.first_name)
-    for key in (AWAITING_AMOUNT, AWAITING_BET_TITLE, AWAITING_BET_ODDS,
-                AWAITING_BET_TYPE, AWAITING_WINNER_OPTIONS, AWAITING_WAGER_LIMITS, "state"):
-        ctx.user_data.pop(key, None)
+    _clear_input_state(ctx)
     text = texts.H(await _main_text(user, name=tg.first_name, is_new=created))
     keyboard = await _main_keyboard(user)
     await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
@@ -61,6 +74,7 @@ async def cmd_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not user:
         await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
+    _clear_input_state(ctx)
     await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
     await _show(ctx, update.effective_chat.id, texts.H(texts.BALANCE.format(balance=float(user["balance"]))), back_keyboard())
 
@@ -70,6 +84,7 @@ async def cmd_bets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not user:
         await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
+    _clear_input_state(ctx)
     text, keyboard = await _build_bets(user)
     await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
     await _show(ctx, update.effective_chat.id, texts.H(text), keyboard)
@@ -80,6 +95,7 @@ async def cmd_my_bets(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not user:
         await _show(ctx, update.effective_chat.id, texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
+    _clear_input_state(ctx)
     text, keyboard = await _build_my_bets(user)
     await _delete_msg(ctx.bot, update.effective_chat.id, update.message.message_id)
     await _show(ctx, update.effective_chat.id, texts.H(text), keyboard)
@@ -156,11 +172,14 @@ async def cmd_new_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_ODDS), await _main_keyboard(user))
         return
     bet = await db.create_bet(title, yes_odds, no_odds, user["id"])
+    # No broadcast here: create_bet makes the bet 'locked', and players are
+    # notified only when it is first opened (the panel's unlock, which alone
+    # checks is_first_open). Broadcasting now would announce an un-bettable bet
+    # and then announce it a second time on open.
     await _show(ctx, update.effective_chat.id, texts.H(texts.BET_CREATED.format(
         id=bet["id"], title=bet["title"],
         yes_odds=float(bet["yes_odds"]), no_odds=float(bet["no_odds"]),
     )), await _main_keyboard(user))
-    await _broadcast_new_bet(ctx.bot, bet)
 
 
 async def cmd_delete_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -201,16 +220,32 @@ async def noop_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-
     user = await db.get_user(query.from_user.id)
     if not user:
+        await query.answer()
         await _show_callback(ctx, query.message.chat_id, query.message.message_id,
                              texts.H("Rekisteröidy ensin komennolla /start"), main_menu_keyboard())
         return
 
     action = query.data.split(":", 1)[1]
     chat_id = query.message.chat_id
+
+    # Alert-showing guards must run before the silent answer() below: a callback
+    # query can be answered only once, so a prior answer() would swallow these.
+    if action == "new_bet":
+        if not user["is_admin"]:
+            await query.answer(texts.NOT_ADMIN, show_alert=True)
+            return
+        if await db.is_game_finished():
+            await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
+            return
+
+    # Leaving input state on every navigation stops a later text message from
+    # being consumed as a stale wager amount (see _clear_input_state).
+    if action != "new_bet":
+        _clear_input_state(ctx)
+
+    await query.answer()
 
     if action == "main":
         await _show_callback(ctx, chat_id, query.message.message_id,
@@ -248,12 +283,7 @@ async def nav_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             is_last = i == len(chunks) - 1
             await query.message.reply_text(texts.H(chunk), reply_markup=back_keyboard() if is_last else None)
     elif action == "new_bet":
-        if not user["is_admin"]:
-            await query.answer(texts.NOT_ADMIN, show_alert=True)
-            return
-        if await db.is_game_finished():
-            await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
-            return
+        # Guards already ran and answered above; here we only enter the flow.
         ctx.user_data["state"] = AWAITING_BET_TITLE
         await _show_callback(ctx, chat_id, query.message.message_id,
                              texts.H(texts.ASK_BET_TITLE), _cancel_keyboard())
@@ -420,10 +450,11 @@ async def winner_opt_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_wager_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-
+    # No early answer(): answerCallbackQuery fires once, so consuming it up front
+    # would swallow every alert and the cashout toast below. Each path answers.
     user = await db.get_user(query.from_user.id)
     if not user:
+        await query.answer()
         return
     if await db.is_game_finished():
         await query.answer(texts.GAME_OVER_BLOCK, show_alert=True)
@@ -445,10 +476,8 @@ async def cancel_input_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    state = ctx.user_data.pop("state", None)
-    for key in (AWAITING_AMOUNT, AWAITING_BET_TITLE, AWAITING_BET_ODDS,
-                AWAITING_BET_TYPE, AWAITING_WINNER_OPTIONS, AWAITING_WAGER_LIMITS):
-        ctx.user_data.pop(key, None)
+    state = ctx.user_data.get("state")
+    _clear_input_state(ctx)
 
     creation_states = (AWAITING_BET_TITLE, AWAITING_BET_ODDS, AWAITING_BET_TYPE, AWAITING_WINNER_OPTIONS)
     msg = texts.CANCEL_CREATION if state in creation_states else "❌ Peruutettu."

@@ -10,6 +10,7 @@ Docker Compose ``db`` service). Each test gets a clean slate.
 import os
 import sys
 from unittest.mock import MagicMock
+from urllib.parse import urlparse
 
 import asyncpg
 import pytest_asyncio
@@ -27,11 +28,28 @@ sys.path.insert(0, os.path.dirname(__file__))
 for _mod in ("telegram", "telegram.ext", "telegram.error", "dotenv"):
     sys.modules.setdefault(_mod, MagicMock())
 
-# Allow DATABASE_URL override; fall back to the Compose default.
-TEST_DB_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://boogiebet:boogiebet@localhost:5432/boogiebet",
-)
+# No default: the conn fixture TRUNCATEs this database on every test, and the
+# old fallback (localhost:5432/boogiebet) is exactly where production listens.
+# Requiring the variable turns a silent wipe into a startup error.
+try:
+    TEST_DB_URL = os.environ["DATABASE_URL"]
+except KeyError:
+    raise RuntimeError(
+        "DATABASE_URL is required to run the tests. Point it at a THROWAWAY "
+        "database — every test truncates it. For example:\n"
+        "  DATABASE_URL=postgresql://boogiebet:boogiebet@localhost:5432/boogiebet_test"
+    ) from None
+
+# Second belt: refuse to run against anything not named like a test database,
+# so an inherited DATABASE_URL (a prod shell, a misconfigured CI job) cannot
+# wipe real data even if someone sets the variable.
+_DB_NAME = urlparse(TEST_DB_URL).path.lstrip("/")
+if not (_DB_NAME.endswith("_test") or _DB_NAME.endswith("test")):
+    raise RuntimeError(
+        f"Refusing to run tests against database {_DB_NAME!r}: every test "
+        "truncates it. Name the test database with a '_test' suffix."
+    )
+
 # db.get_pool() reads DATABASE_URL from the environment.
 os.environ["DATABASE_URL"] = TEST_DB_URL
 

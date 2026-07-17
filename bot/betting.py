@@ -48,6 +48,20 @@ def wager_pnl(row) -> float:
     return amount * wager_odds(row) - amount if wager_is_winning(row) else -amount
 
 
+# Fraction of a stake returned on cashout; the rest is the house's cut.
+CASHOUT_RATE = 0.95
+
+
+def cashout_refund(amount) -> int:
+    """Whole-euro refund for cancelling a wager before lock.
+
+    Floored to an integer so the amount shown on the button, the amount in the
+    confirmation, and the amount credited to the balance are the same number —
+    the old round(x, 2) credited cents that no :.0f display ever showed.
+    """
+    return int(float(amount) * CASHOUT_RATE)
+
+
 # Wager validation outcomes (returned by validate_wager).
 WAGER_OK = "ok"
 WAGER_BELOW_GLOBAL_MIN = "below_global_min"  # under the game-wide minimum

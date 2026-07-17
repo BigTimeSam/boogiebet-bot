@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from html import escape
 
 from notifications import _broadcast_bet_resolved, _broadcast_new_bet
@@ -14,9 +15,77 @@ from handlers import AWAITING_WAGER_LIMITS
 
 logger = logging.getLogger(__name__)
 
+# Simple in-memory brute-force throttle for /admin. Process-local (fine for the
+# single-process bot); resets on restart, which only ever loosens it.
+_ADMIN_MAX_ATTEMPTS = 5
+_ADMIN_LOCKOUT_SECONDS = 15 * 60
+_admin_attempts: dict[int, list] = {}  # telegram_id -> [fail_count, locked_until_monotonic]
+
 
 def _password():
     return os.environ.get("ADMIN_PASSWORD", "")
+
+
+def _now() -> float:
+    # Monotonic: unaffected by wall-clock adjustments, which is what a lockout
+    # window wants.
+    return time.monotonic()
+
+
+def _admin_locked_out(telegram_id: int, now: float) -> bool:
+    state = _admin_attempts.get(telegram_id)
+    return bool(state and state[0] >= _ADMIN_MAX_ATTEMPTS and now < state[1])
+
+
+def _record_admin_failure(telegram_id: int, now: float):
+    state = _admin_attempts.setdefault(telegram_id, [0, 0.0])
+    state[0] += 1
+    if state[0] >= _ADMIN_MAX_ATTEMPTS:
+        state[1] = now + _ADMIN_LOCKOUT_SECONDS
+
+
+def _clear_admin_failures(telegram_id: int):
+    _admin_attempts.pop(telegram_id, None)
+
+
+async def _delete_command_message(update):
+    """Delete the user's command message (best-effort).
+
+    /admin <password> otherwise lingers in the chat history forever, unlike every
+    other command handler which cleans up its input.
+    """
+    try:
+        await update.get_bot().delete_message(
+            chat_id=update.effective_chat.id, message_id=update.message.message_id
+        )
+    except Exception:
+        pass
+
+
+async def _resolve_target(handle: str):
+    """Resolve an admin-command handle to exactly one user.
+
+    Returns (user, None) on a unique match, or (None, error_text) to show — an
+    all-digit handle is treated as a telegram_id (unambiguous), otherwise the
+    username is matched and an ambiguous match is refused rather than guessed,
+    so /lisaasaldo never quietly credits the wrong player.
+    """
+    handle = handle.lstrip("@")
+    if handle.isdigit():
+        user = await db.get_user_by_telegram_id(int(handle))
+        if not user:
+            return None, f"❌ Käyttäjää (id {handle}) ei löydy."
+        return user, None
+    matches = await db.get_users_by_username(handle)
+    if not matches:
+        return None, f"❌ Käyttäjää '{handle}' ei löydy."
+    if len(matches) > 1:
+        lines = "\n".join(f"• {m['username']} — id {m['telegram_id']}" for m in matches)
+        return None, (
+            f"⚠️ Handlella '{handle}' on {len(matches)} käyttäjää:\n{lines}\n"
+            "Anna komento uudelleen käyttäen telegram-id:tä handlen sijaan."
+        )
+    return matches[0], None
 
 
 def admin_panel_keyboard(game_finished: bool = False):
@@ -50,17 +119,31 @@ def admin_panel_keyboard(game_finished: bool = False):
 
 
 async def register(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    tg_id = update.effective_user.id
+    # Delete the message first, whatever the outcome, so the password never
+    # persists in the chat (especially if /admin was sent in a group).
+    await _delete_command_message(update)
+    now = _now()
     user, _ = await db.get_or_create_user(
-        update.effective_user.id,
-        update.effective_user.username or update.effective_user.first_name,
+        tg_id, update.effective_user.username or update.effective_user.first_name,
     )
     if user["is_admin"]:
         await update.message.reply_text(texts.H(texts.ADMIN_ALREADY))
         return
+    if _admin_locked_out(tg_id, now):
+        logger.warning("Blocked /admin attempt from locked-out telegram_id=%s", tg_id)
+        await update.message.reply_text(texts.H(texts.ADMIN_LOCKED_OUT))
+        return
     if not ctx.args or ctx.args[0] != _password():
+        _record_admin_failure(tg_id, now)
+        logger.warning(
+            "Failed /admin attempt from telegram_id=%s username=%s",
+            tg_id, update.effective_user.username,
+        )
         await update.message.reply_text(texts.H(texts.WRONG_PASSWORD))
         return
-    await db.set_admin(update.effective_user.id)
+    _clear_admin_failures(tg_id)
+    await db.set_admin(tg_id)
     game_done = await db.is_game_finished()
     await update.message.reply_text(texts.H(texts.ADMIN_WELCOME), reply_markup=admin_panel_keyboard(game_done))
 
@@ -167,9 +250,25 @@ async def cmd_finish_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    """Ack the callback exactly once.
 
+    answerCallbackQuery is single-shot, so the dispatcher below must NOT ack up
+    front or it swallows every alert it later tries to show. Instead each branch
+    shows its own alert (first answer wins), and this finally silently acks any
+    branch that only edited a message, so the button always stops spinning.
+    """
+    query = update.callback_query
+    try:
+        await _admin_dispatch(update, ctx)
+    finally:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+
+
+async def _admin_dispatch(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
     user = await db.get_user(query.from_user.id)
     if not user or not user["is_admin"]:
         await query.answer(texts.NOT_ADMIN, show_alert=True)
@@ -699,20 +798,26 @@ async def cmd_add_balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args or len(ctx.args) < 2:
         await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/lisaasaldo <handle> <summa>")))
         return
-    handle = ctx.args[0].lstrip("@")
     try:
         amount = float(ctx.args[1].replace(",", "."))
     except ValueError:
         await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/lisaasaldo <handle> <summa>")))
         return
-    target = await db.get_user_by_username(handle)
-    if not target:
-        await update.message.reply_text(texts.H(f"❌ Käyttäjää '{handle}' ei löydy."))
+    target, err = await _resolve_target(ctx.args[0])
+    if err:
+        await update.message.reply_text(texts.H(err))
         return
-    await db.add_balance(target["id"], amount)
+    new_balance = await db.add_balance(target["id"], amount)
+    if new_balance is None:
+        await update.message.reply_text(texts.H(
+            f"❌ Saldon vähennys epäonnistuu: {target['username']} ei voi mennä miinukselle."
+        ))
+        return
     sign = "+" if amount >= 0 else ""
+    # Report the balance the DB actually returned, not a value computed from a
+    # possibly-stale read.
     await update.message.reply_text(texts.H(
-        f"✅ Saldo päivitetty!\n{target['username']}: {sign}{amount:.0f} € → uusi saldo {float(target['balance']) + amount:.0f} €"
+        f"✅ Saldo päivitetty!\n{target['username']}: {sign}{amount:.0f} € → uusi saldo {float(new_balance):.0f} €"
     ))
 
 
@@ -728,7 +833,6 @@ async def cmd_set_kepuli(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args or len(ctx.args) < 2:
         await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/kepuli <handle> <summa>")))
         return
-    handle = ctx.args[0].lstrip("@")
     try:
         amount = float(ctx.args[1].replace(",", "."))
         if amount < 0:
@@ -736,9 +840,9 @@ async def cmd_set_kepuli(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text(texts.H(texts.INVALID_COMMAND.format(usage="/kepuli <handle> <summa>")))
         return
-    target = await db.get_user_by_username(handle)
-    if not target:
-        await update.message.reply_text(texts.H(f"❌ Käyttäjää '{handle}' ei löydy."))
+    target, err = await _resolve_target(ctx.args[0])
+    if err:
+        await update.message.reply_text(texts.H(err))
         return
     await db.set_bonus_balance(target["id"], amount)
     if amount == 0:

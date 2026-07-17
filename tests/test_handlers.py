@@ -10,6 +10,7 @@ from fakes import FakeBot, FakeContext, FakeQuery, make_callback_update, make_up
 
 import db
 import handlers
+import texts
 from handlers import AWAITING_AMOUNT
 
 # ── seed helpers ───────────────────────────────────────────────────────────────
@@ -313,3 +314,78 @@ async def test_cmd_place_bet_still_accepts_whole_euros(conn):
     w = await db.get_user_wager(user["id"], bet["id"])
     assert w is not None and float(w["amount"]) == 100.0
     assert float((await db.get_user(1))["balance"]) == 900.0
+
+
+# ── navigation clears stale input state ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_nav_clears_pending_input_state(conn):
+    """Leaving a wager-amount prompt by navigating must drop the state, or the
+    next text message is consumed as an amount for the abandoned bet."""
+    await _mk_user(conn)
+    ctx = FakeContext(FakeBot())
+    ctx.user_data["state"] = AWAITING_AMOUNT
+    ctx.user_data[AWAITING_AMOUNT] = {"bet_id": 1, "side": "yes"}
+    query = FakeQuery("nav:kohteet", user_id=1)
+
+    await handlers.nav_callback(make_callback_update(query), ctx)
+
+    assert "state" not in ctx.user_data
+    assert AWAITING_AMOUNT not in ctx.user_data
+
+
+@pytest.mark.asyncio
+async def test_nav_new_bet_keeps_and_sets_state(conn):
+    """The new-bet entry is the one nav path that legitimately sets state."""
+    await _mk_user(conn, username="admin")
+    await conn.execute("UPDATE users SET is_admin = TRUE WHERE telegram_id = 1")
+    ctx = FakeContext(FakeBot())
+    query = FakeQuery("nav:new_bet", user_id=1)
+
+    await handlers.nav_callback(make_callback_update(query), ctx)
+
+    assert ctx.user_data.get("state") == handlers.AWAITING_BET_TITLE
+
+
+@pytest.mark.asyncio
+async def test_nav_new_bet_denied_for_non_admin_shows_alert(conn):
+    await _mk_user(conn)  # not admin
+    ctx = FakeContext(FakeBot())
+    query = FakeQuery("nav:new_bet", user_id=1)
+
+    await handlers.nav_callback(make_callback_update(query), ctx)
+
+    # The alert must actually reach the user (not be swallowed by an early ack).
+    assert any(a["show_alert"] and a["text"] == texts.NOT_ADMIN for a in query.answers)
+    assert ctx.user_data.get("state") is None
+
+
+# ── cashout toast is delivered (callback answered once, meaningfully) ────────────
+
+@pytest.mark.asyncio
+async def test_cashout_toast_is_delivered(conn):
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+    await handlers._process_wager(FakeContext(FakeBot()), 1, user, bet["id"], "yes", 100.0)
+
+    query = FakeQuery("wager:cancel:" + str(bet["id"]), user_id=1)
+    await handlers.cancel_wager_callback(make_callback_update(query), FakeContext(FakeBot()))
+
+    # The success toast must be the answer shown, not swallowed by a blanket ack.
+    assert any("Cashout" in (a["text"] or "") for a in query.answers)
+    assert await db.get_user_wager(user["id"], bet["id"]) is None
+
+
+@pytest.mark.asyncio
+async def test_cashout_on_locked_bet_shows_alert(conn):
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+    await handlers._process_wager(FakeContext(FakeBot()), 1, user, bet["id"], "yes", 100.0)
+    await conn.execute("UPDATE bets SET status = 'locked' WHERE id = $1", bet["id"])
+
+    query = FakeQuery("wager:cancel:" + str(bet["id"]), user_id=1)
+    await handlers.cancel_wager_callback(make_callback_update(query), FakeContext(FakeBot()))
+
+    assert any(a["show_alert"] for a in query.answers), "the refusal must be shown as an alert"
+    # Wager untouched, balance unchanged.
+    assert await db.get_user_wager(user["id"], bet["id"]) is not None

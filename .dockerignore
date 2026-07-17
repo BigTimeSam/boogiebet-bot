@@ -1,0 +1,26 @@
+# Docker does not honour .gitignore, and the Dockerfile does `COPY . .` from a
+# build context that in production is the live deploy dir — so without this the
+# real .env (BOT_TOKEN, ADMIN_PASSWORD) would be baked into an image layer.
+# Secrets still reach the container at runtime via env_file, so nothing is lost.
+.env
+.env.*
+!.env.example
+
+# Backups and local state that must never enter an image.
+backups/
+results/data.json
+
+# VCS, CI and tooling metadata.
+.git/
+.github/
+.pre-commit-config.yaml
+
+# Tests and their caches (not needed at runtime).
+tests/
+.pytest_cache/
+.ruff_cache/
+
+# Python bytecode.
+__pycache__/
+*.pyc
+*.pyo

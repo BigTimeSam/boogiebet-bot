@@ -160,3 +160,23 @@ def test_validate_wager_replacement_charges_only_delta():
     # amount 120 > balance 50 → insufficient (max 300 not exceeded by 220).
     assert status == betting.WAGER_INSUFFICIENT
     assert new_total == 220
+
+
+# ── cashout_refund ──────────────────────────────────────────────────────────────
+
+def test_cashout_refund_whole_euros():
+    # 200 × 0.95 = 190 exactly.
+    assert betting.cashout_refund(200) == 190
+    assert isinstance(betting.cashout_refund(200), int)
+
+
+def test_cashout_refund_floors_partial_cents():
+    # 50 × 0.95 = 47.5 → floored to 47 so the shown and credited amounts match.
+    assert betting.cashout_refund(50) == 47
+    # 21 × 0.95 = 19.95 → 19
+    assert betting.cashout_refund(21) == 19
+
+
+def test_cashout_refund_never_exceeds_stake():
+    for stake in range(20, 201):
+        assert betting.cashout_refund(stake) <= stake

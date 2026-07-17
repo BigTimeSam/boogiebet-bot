@@ -2,6 +2,7 @@ import logging
 import os
 
 import asyncpg
+import betting
 
 logger = logging.getLogger(__name__)
 
@@ -123,10 +124,35 @@ async def get_user_by_username(username: str):
     return dict(row) if row else None
 
 
-async def add_balance(user_id: int, amount: float):
+async def get_users_by_username(username: str) -> list[dict]:
+    """All users matching a handle. username is not unique, so an admin command
+    that resolves 'alice' to a single row can silently pick the wrong player and
+    hand money to them — callers should disambiguate when this returns >1."""
     pool = await get_pool()
-    await pool.execute(
-        "UPDATE users SET balance = balance + $1, bonus_balance = bonus_balance + $1 WHERE id = $2",
+    rows = await pool.fetch(
+        "SELECT * FROM users WHERE lower(username) = lower($1) ORDER BY id", username
+    )
+    return [dict(r) for r in rows]
+
+
+async def get_user_by_telegram_id(telegram_id: int):
+    return await get_user(telegram_id)
+
+
+async def add_balance(user_id: int, amount: float):
+    """Adjust a user's balance and return the new balance (None if it would go
+    negative and was rejected).
+
+    bonus_balance is the 'kepuli' marker and only ever grows: GREATEST(...,0)
+    stops a withdrawal (negative amount) from driving it below zero, which used
+    to push the player off both the leaderboard (bonus = 0) and the kepuli list
+    (bonus > 0) at once.
+    """
+    pool = await get_pool()
+    return await pool.fetchval(
+        "UPDATE users SET balance = balance + $1, "
+        "bonus_balance = GREATEST(bonus_balance + $1, 0) "
+        "WHERE id = $2 AND balance + $1 >= 0 RETURNING balance",
         amount, user_id,
     )
 
@@ -142,7 +168,7 @@ async def get_kepulit():
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT telegram_id, username, balance, bonus_balance FROM users "
-        "WHERE bonus_balance > 0 ORDER BY bonus_balance DESC"
+        "WHERE bonus_balance <> 0 ORDER BY bonus_balance DESC"
     )
     return [dict(r) for r in rows]
 
@@ -371,14 +397,17 @@ async def resolve_bet(bet_id: int, result: str):
                         "UPDATE users SET balance = balance + $1 WHERE id = $2 RETURNING balance",
                         payout, w["user_id"],
                     )
+                    # profit is NET (payout − stake); payout is the gross credit.
+                    # Views show net so the same wager reads the same everywhere.
                     winners.append({
                         "username": w["username"] or f"user{w['telegram_id']}",
-                        "profit": payout,
+                        "profit": payout - float(w["amount"]),
+                        "payout": payout,
                         "balance": float(new_balance),
                     })
             logger.info(
                 "Resolved bet %s as '%s': %d winner(s), %.2f € paid out",
-                bet_id, result, len(winners), sum(x["profit"] for x in winners),
+                bet_id, result, len(winners), sum(x["payout"] for x in winners),
             )
             return winners
 
@@ -421,12 +450,13 @@ async def resolve_winner_bet(bet_id: int, winning_option_id: int):
                     )
                     winners.append({
                         "username": w["username"] or f"user{w['telegram_id']}",
-                        "profit": payout,
+                        "profit": payout - float(w["amount"]),
+                        "payout": payout,
                         "balance": float(new_balance),
                     })
             logger.info(
                 "Resolved winner bet %s (option %s): %d winner(s), %.2f € paid out",
-                bet_id, winning_option_id, len(winners), sum(x["profit"] for x in winners),
+                bet_id, winning_option_id, len(winners), sum(x["payout"] for x in winners),
             )
             return winners
 
@@ -470,19 +500,25 @@ async def place_wager(user_id: int, bet_id: int, side: str, amount: float, optio
 
 
 async def cancel_wager(user_id: int, bet_id: int):
-    """Cancel an open wager and refund 95% of the amount."""
+    """Cancel an open wager and refund a whole-euro share of the amount.
+
+    Returns the refund, or None if there is no cancellable wager. Locks the bet
+    row FOR UPDATE so a cancel cannot interleave with a lock/resolve of the same
+    bet regardless of how updates are dispatched.
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
             wager = await conn.fetchrow(
                 "SELECT w.amount FROM wagers w "
                 "JOIN bets b ON b.id = w.bet_id "
-                "WHERE w.user_id = $1 AND w.bet_id = $2 AND b.status = 'open'",
+                "WHERE w.user_id = $1 AND w.bet_id = $2 AND b.status = 'open' "
+                "FOR UPDATE OF b",
                 user_id, bet_id,
             )
             if not wager:
                 return None
-            refund = round(float(wager["amount"]) * 0.95, 2)
+            refund = betting.cashout_refund(wager["amount"])
             await conn.execute(
                 "UPDATE users SET balance = balance + $1 WHERE id = $2",
                 refund, user_id,
@@ -540,7 +576,7 @@ async def get_leaderboard():
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT telegram_id, username, balance FROM users "
-        "WHERE bonus_balance = 0 ORDER BY balance DESC"
+        "WHERE bonus_balance <= 0 ORDER BY balance DESC"
     )
     return [dict(r) for r in rows]
 

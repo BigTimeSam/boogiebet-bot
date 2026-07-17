@@ -18,3 +18,9 @@ MAX_ODDS = 999.99
 
 # Balance every player starts with (mirrors the users.balance DEFAULT in init.sql).
 STARTING_BALANCE = 1000.0
+
+# Telegram rejects any message body over 4096 characters. Views that can grow
+# without bound (a player's whole wager history, the open-bets broadcast) must
+# chunk or truncate against this; leave headroom for the HTML wrapper.
+TELEGRAM_MAX_MESSAGE = 4096
+MESSAGE_CHUNK_LIMIT = 3800

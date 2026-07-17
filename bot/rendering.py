@@ -87,7 +87,9 @@ async def _build_my_bets(user):
         elif w["status"] == "locked":
             icon, extra, title_suffix = "🎯", f" (mahdollinen voitto {payout:.0f} €)", " 🔒"
         elif won:
-            profit = amount * odds
+            # Net profit (payout − stake), matching the PnL view and results site;
+            # the stake was already charged when the wager was placed.
+            profit = betting.wager_pnl(w)
             icon, extra, title_suffix = "🏆", f" (+{profit:.0f} €)", ""
         else:
             icon, extra, title_suffix = "❌", f" (-{amount:.0f} €)", ""
@@ -97,7 +99,8 @@ async def _build_my_bets(user):
             amount=amount, odds=odds, icon=icon, extra=extra,
         )
         if w["status"] == "open":
-            refund = amount * 0.95
+            # The whole-euro amount actually credited on cashout (see db.cancel_wager).
+            refund = betting.cashout_refund(amount)
             label = f"💸 Cashout #{w['bet_id']} (+{refund:.0f} €)"
             keyboard.append([InlineKeyboardButton(label, callback_data=f"wager:cancel:{w['bet_id']}")])
     keyboard.append([InlineKeyboardButton("⬅️ Takaisin", callback_data="nav:main")])

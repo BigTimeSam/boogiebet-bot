@@ -27,15 +27,27 @@ class FakeBot:
 
 
 class FakeMessage:
-    def __init__(self, text=None, chat_id=1, message_id=1):
+    def __init__(self, text=None, chat_id=1, message_id=1, bot=None):
         self.text = text
         self.chat_id = chat_id
         self.message_id = message_id
         self.replies = []
+        self.edits = []
+        self._bot = bot or FakeBot()
 
     async def reply_text(self, text, reply_markup=None, **kw):
         self.replies.append(text)
         return SimpleNamespace(message_id=999)
+
+    async def edit_text(self, text, reply_markup=None, **kw):
+        self.edits.append(text)
+        return SimpleNamespace(message_id=self.message_id)
+
+    async def edit_reply_markup(self, reply_markup=None, **kw):
+        self.edits.append(None)
+
+    def get_bot(self):
+        return self._bot
 
 
 class FakeContext:
@@ -51,9 +63,9 @@ class FakeQuery:
     def __init__(self, data, user_id=1, chat_id=1, message_id=1, bot=None):
         self.data = data
         self.from_user = SimpleNamespace(id=user_id)
-        self.message = FakeMessage(chat_id=chat_id, message_id=message_id)
-        self.answers = []
         self._bot = bot or FakeBot()
+        self.message = FakeMessage(chat_id=chat_id, message_id=message_id, bot=self._bot)
+        self.answers = []
 
     async def answer(self, text=None, show_alert=False, **kw):
         self.answers.append({"text": text, "show_alert": show_alert})
