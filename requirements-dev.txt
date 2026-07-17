@@ -2,7 +2,7 @@
 # python-dotenv) so a fresh dev env can import the bot package directly.
 pytest==8.3.5
 pytest-asyncio==0.24.0
-pytest-cov==5.0.0
+pytest-cov==7.1.0
 asyncpg==0.29.0
 python-dotenv==1.0.1
 ruff==0.6.9
