@@ -288,11 +288,17 @@ async def delete_bet(bet_id: int):
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # Bail out before touching anything: the wagers/bet_options deletes
+            # below are unconditional, so a resolved bet would otherwise lose
+            # them (and its payout history) while we return False to the caller.
+            # FOR UPDATE holds the status still for the rest of the transaction.
+            bet = await conn.fetchrow(
+                "SELECT status FROM bets WHERE id = $1 FOR UPDATE", bet_id
+            )
+            if not bet or bet["status"] not in ("open", "locked"):
+                return False
             wagers = await conn.fetch(
-                "SELECT w.user_id, w.amount FROM wagers w "
-                "JOIN bets b ON b.id = w.bet_id "
-                "WHERE w.bet_id = $1 AND b.status IN ('open', 'locked')",
-                bet_id,
+                "SELECT user_id, amount FROM wagers WHERE bet_id = $1", bet_id
             )
             for w in wagers:
                 await conn.execute(
@@ -301,10 +307,8 @@ async def delete_bet(bet_id: int):
                 )
             await conn.execute("DELETE FROM wagers WHERE bet_id = $1", bet_id)
             await conn.execute("DELETE FROM bet_options WHERE bet_id = $1", bet_id)
-            result = await conn.execute(
-                "DELETE FROM bets WHERE id = $1 AND status IN ('open', 'locked')", bet_id
-            )
-            return result == "DELETE 1"
+            await conn.execute("DELETE FROM bets WHERE id = $1", bet_id)
+            return True
 
 
 async def lock_bet(bet_id: int):
@@ -340,9 +344,12 @@ async def resolve_bet(bet_id: int, result: str):
             # Guard against double-resolve: only a currently-locked bet can be
             # resolved, and the conditional UPDATE makes payout idempotent even
             # if two resolve calls race past the handler-level status check.
+            # bet_type pins this to simple bets: a winner bet's wagers all carry
+            # side 'opt', so a yes/no result would match nobody, lose every stake
+            # and leave a result that revert_resolved_bet() cannot parse back.
             updated = await conn.execute(
                 "UPDATE bets SET status = 'resolved', result = $1 "
-                "WHERE id = $2 AND status = 'locked'",
+                "WHERE id = $2 AND status = 'locked' AND bet_type = 'simple'",
                 result, bet_id,
             )
             if updated != "UPDATE 1":
@@ -387,10 +394,11 @@ async def resolve_winner_bet(bet_id: int, winning_option_id: int):
             if not valid:
                 return None
             # Same idempotent guard as resolve_bet: only resolve a locked bet,
-            # so a race can never pay winners twice.
+            # so a race can never pay winners twice. bet_type mirrors the
+            # simple-bet guard there.
             updated = await conn.execute(
                 "UPDATE bets SET status = 'resolved', result = $1 "
-                "WHERE id = $2 AND status = 'locked'",
+                "WHERE id = $2 AND status = 'locked' AND bet_type = 'winner'",
                 str(winning_option_id), bet_id,
             )
             if updated != "UPDATE 1":
@@ -577,14 +585,25 @@ async def revert_resolved_bet(bet_id: int) -> bool:
                 return False
             result = bet["result"]
             if bet["bet_type"] == "winner":
-                winning_option_id = int(result)
+                # Tolerate a non-numeric result rather than raising: a winner bet
+                # resolved before the bet_type guard existed carries 'yes'/'no'
+                # here, and those are exactly the ones needing a revert. No payout
+                # was ever made in that case, so there is nothing to claw back.
+                try:
+                    winning_option_id = int(result)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Bet %s is a winner bet with non-option result %r; "
+                        "reverting status without clawback", bet_id, result,
+                    )
+                    winning_option_id = None
                 wagers = await conn.fetch(
                     "SELECT w.user_id, w.amount, bo.odds "
                     "FROM wagers w "
                     "JOIN bet_options bo ON bo.id = w.option_id "
                     "WHERE w.bet_id = $1 AND w.option_id = $2",
                     bet_id, winning_option_id,
-                )
+                ) if winning_option_id is not None else []
                 for w in wagers:
                     payout = float(w["amount"]) * float(w["odds"])
                     # Clamp at 0: a winner may have already spent the payout, and

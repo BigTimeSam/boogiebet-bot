@@ -257,3 +257,59 @@ async def test_cashout_callback_rejects_locked_bet(conn):
 
     assert await db.get_user_wager(user["id"], bet["id"]) is not None  # unchanged
     assert any(a["show_alert"] for a in q.answers)
+
+
+# ── cmd_place_bet input hardening ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cmd_place_bet_rejects_nan_amount(conn):
+    """The /vetoa path must reject non-finite input.
+
+    NaN passes every limit check (all comparisons against it are False) and
+    Postgres accepts it (NaN >= 0 is TRUE), so it used to land in the balance
+    and corrupt it permanently — /lisaasaldo could not repair it, and NaN sorts
+    highest, parking the player at the top of the leaderboard.
+    """
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+
+    for bad in ("nan", "inf", "1e400"):
+        ctx = FakeContext(FakeBot(), args=[str(bet["id"]), "kyllä", bad])
+        await handlers.cmd_place_bet(make_update(f"/vetoa {bet['id']} kyllä {bad}"), ctx)
+
+        assert await db.get_user_wager(user["id"], bet["id"]) is None, bad
+        balance = float((await db.get_user(1))["balance"])
+        assert balance == 1000.0, f"{bad} must not touch the balance"
+
+    corrupted = await conn.fetchval(
+        "SELECT COUNT(*) FROM users WHERE balance <> balance"  # NaN <> NaN is TRUE
+    )
+    assert corrupted == 0
+
+
+@pytest.mark.asyncio
+async def test_cmd_place_bet_rejects_fractional_amount(conn):
+    """/vetoa used to accept fractional euros while the button flow required
+    whole ones; both now share parse_wager_amount()."""
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+
+    ctx = FakeContext(FakeBot(), args=[str(bet["id"]), "kyllä", "50.5"])
+    await handlers.cmd_place_bet(make_update(f"/vetoa {bet['id']} kyllä 50.5"), ctx)
+
+    assert await db.get_user_wager(user["id"], bet["id"]) is None
+    assert float((await db.get_user(1))["balance"]) == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_cmd_place_bet_still_accepts_whole_euros(conn):
+    """The hardening must not break the supported path, comma included."""
+    user = await _mk_user(conn)
+    bet = await _mk_open_simple_bet(conn)
+
+    ctx = FakeContext(FakeBot(), args=[str(bet["id"]), "kyllä", "100,00"])
+    await handlers.cmd_place_bet(make_update(f"/vetoa {bet['id']} kyllä 100,00"), ctx)
+
+    w = await db.get_user_wager(user["id"], bet["id"])
+    assert w is not None and float(w["amount"]) == 100.0
+    assert float((await db.get_user(1))["balance"]) == 900.0

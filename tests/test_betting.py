@@ -108,6 +108,14 @@ def test_parse_wager_amount_rejects_nonnumeric():
     assert betting.parse_wager_amount("") is None
 
 
+def test_parse_wager_amount_rejects_non_finite():
+    """float() happily parses these; every comparison against NaN is False, so a
+    NaN that reaches validate_wager passes every limit and lands in the DB
+    (Postgres: NaN >= 0 is TRUE), permanently corrupting the balance."""
+    for text in ("nan", "NaN", "inf", "-inf", "infinity", "1e400"):
+        assert betting.parse_wager_amount(text) is None, text
+
+
 # ── validate_wager ─────────────────────────────────────────────────────────────
 
 def test_validate_wager_ok():

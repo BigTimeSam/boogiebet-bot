@@ -126,6 +126,11 @@ async def cmd_resolve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if bet["status"] != "locked":
         await update.message.reply_text(texts.H(texts.BET_NOT_LOCKED.format(id=bet_id)))
         return
+    # The panel branch dispatches on bet_type; this command must too, or a winner
+    # bet resolves to a yes/no result that matches none of its 'opt' wagers.
+    if bet["bet_type"] != "simple":
+        await update.message.reply_text(texts.H(texts.BET_IS_WINNER_TYPE.format(id=bet_id)))
+        return
     winners = await db.resolve_bet(bet_id, result)
     if winners is None:
         await update.message.reply_text(texts.H(texts.BET_RESOLVED.format(id=bet_id)))

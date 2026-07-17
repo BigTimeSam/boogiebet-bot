@@ -117,11 +117,10 @@ async def cmd_place_bet(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_SIDE), back_keyboard())
         return
     side = "yes" if side_input in ("kyllä", "kylla") else "no"
-    try:
-        amount = float(args[2].replace(",", "."))
-        if amount <= 0:
-            raise ValueError
-    except ValueError:
+    # Same parser as the button flow: whole euros only, and non-finite input
+    # rejected before it can reach the balance.
+    amount = betting.parse_wager_amount(args[2])
+    if amount is None:
         await _show(ctx, update.effective_chat.id, texts.H(texts.INVALID_AMOUNT), back_keyboard())
         return
     await _process_wager(ctx, update.effective_chat.id, user, bet_id, side, amount)
