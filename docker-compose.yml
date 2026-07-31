@@ -9,6 +9,8 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
     logging: *default-logging
     environment:
       POSTGRES_DB: boogiebet
@@ -30,6 +32,8 @@ services:
   db-backup:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 512m
     logging: *default-logging
     depends_on:
       db:
@@ -60,6 +64,13 @@ services:
   bot:
     build: .
     env_file: .env
+    # prod-docker-01 hosts every bot plus 12 CI runners on 22 GiB and froze on a
+    # global OOM on 2026-07-31 because uncapped containers could take all of it.
+    # Measured steady state here is ~23MB; 1g is a runaway ceiling, not a budget.
+    # memswap == mem_limit denies swap — thrashing a shared host is worse than
+    # losing one container.
+    mem_limit: 1g
+    memswap_limit: 1g
     logging: *default-logging
     environment:
       PERSISTENCE_PATH: /home/appuser/data/persistence.pickle
