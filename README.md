@@ -33,7 +33,7 @@ Telegram-veikkausbotti kaveriporukoille. Jokainen pelaaja aloittaa 1 000 €:n v
 ### 2. Kloonaa repositorio
 
 ```bash
-git clone git@github.com:BigTimeSam/boogiebet-bot.git
+git clone git@github.com:PoggersOy/boogiebet-bot.git
 cd boogiebet-bot
 ```
 
@@ -169,15 +169,9 @@ Repositoriossa on GitHub Actions -workflow (`.github/workflows/deploy.yml`), jok
 
 ### Self-hosted runner
 
-Workflow käyttää self-hosted runneria palvelimella. Rekisteröi runner GitHubissa:
-
-**Settings → Actions → Runners → New self-hosted runner**
-
-Lisää label `prod-docker-01` ja käynnistä runnerpalvelu:
-
-```bash
-sudo ./svc.sh install && sudo ./svc.sh start
-```
+Workflow käyttää `prod-docker-01`-palvelimella PoggersOy-organisaatiolle
+rekisteröityä yhteistä runneria labelillä `poggersoy-shared`. Tälle
+repositoriolle ei rekisteröidä omaa runneria.
 
 ### Palvelimen alustus
 
@@ -185,7 +179,7 @@ sudo ./svc.sh install && sudo ./svc.sh start
 sudo mkdir -p /srv/boogiebet-bot
 sudo chown deploy:deploy /srv/boogiebet-bot
 cd /srv/boogiebet-bot
-git clone git@github.com:BigTimeSam/boogiebet-bot.git .
+git clone git@github.com:PoggersOy/boogiebet-bot.git .
 # Luo .env tiedosto (ks. Asennus kohta 3)
 ```
 

@@ -11,7 +11,7 @@ permissions:
 jobs:
   deploy:
     name: Deploy production
-    runs-on: [self-hosted, Linux, X64, prod-docker-01]
+    runs-on: [self-hosted, Linux, X64, poggersoy-shared]
     concurrency:
       group: production-deploy
       cancel-in-progress: false
